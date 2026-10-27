@@ -7,7 +7,6 @@ import type {
   Vehicle,
   WorkOrder,
   AIProposal,
-  CreateVehicleDto,
 } from './contracts.ts';
 
 export interface ApiClientConfig {

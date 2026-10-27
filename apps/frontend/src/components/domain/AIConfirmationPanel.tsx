@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import type { AIProposal } from '../../api/contracts.ts';
 
 export interface AIConfirmationPanelProps {

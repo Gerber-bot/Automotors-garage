@@ -1,7 +1,6 @@
 import { Entity } from '../../../shared/domain/entity.ts';
 import { Result } from '../../../shared/domain/result.ts';
 import { VerificationLevel } from './verification-level.ts';
-import type { VerificationEvaluation } from './verification-level.ts';
 
 export interface MaintenanceRecordProps {
   vehicleId: string;

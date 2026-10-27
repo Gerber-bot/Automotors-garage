@@ -1,5 +1,3 @@
-import React from 'react';
-
 export interface WorkshopOption {
   id: string;
   name: string;
@@ -17,8 +15,6 @@ export function WorkshopSelector({
   activeWorkshopId,
   onSelectWorkshop,
 }: WorkshopSelectorProps) {
-  const active = workshops.find((w) => w.id === activeWorkshopId);
-
   return (
     <div className="relative inline-block text-left">
       <select

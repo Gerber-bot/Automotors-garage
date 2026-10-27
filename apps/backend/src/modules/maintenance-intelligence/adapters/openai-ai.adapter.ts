@@ -178,7 +178,7 @@ export class OpenAIAIAdapter implements AIProviderPort, StructuredExtractionPort
 
     // Real Whisper API call
     const formData = new FormData();
-    const blob = new Blob([audioBuffer], { type: mimeType });
+    const blob = new Blob([new Uint8Array(audioBuffer)], { type: mimeType });
     formData.append('file', blob, 'audio.wav');
     formData.append('model', 'whisper-1');
     if (options?.language) formData.append('language', options.language);

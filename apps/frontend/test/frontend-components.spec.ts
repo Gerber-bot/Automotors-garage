@@ -5,10 +5,8 @@ import {
   QuickServiceEntrySchema,
   AIProposalSchema,
   CreateVehicleDtoSchema,
-  Role,
 } from '../src/api/contracts.ts';
 import { ApiClient } from '../src/api/client.ts';
-import { MOCK_VEHICLES, MOCK_WORK_ORDERS } from '../src/api/mock-backend.ts';
 
 describe('Frontend Architecture & Components Test Suite', () => {
   // ============================================================================

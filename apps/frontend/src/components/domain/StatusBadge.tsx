@@ -1,4 +1,3 @@
-import React from 'react';
 import type { WorkOrderStatus, VerificationLevel } from '../../api/contracts.ts';
 
 export interface StatusBadgeProps {

@@ -1,4 +1,4 @@
-import { Role, Permission } from './roles.ts';
+import { Role } from './roles.ts';
 
 export const ResourceType = {
   TENANT: 'TENANT',

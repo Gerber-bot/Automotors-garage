@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --experimental-strip-types --test test/vehicle-history-engine.spec.ts",
+    "test": "node --experimental-strip-types --test test/vehicle-history-engine.spec.ts test/maintenance-intelligence.spec.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

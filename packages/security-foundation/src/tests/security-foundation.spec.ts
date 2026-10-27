@@ -19,7 +19,6 @@ import {
   VehicleHistoryPrivacyService,
   RoutePrivacyRegistry,
   AuthenticationGuard,
-  TenantGuard,
   AuthenticationRequiredError,
   SessionRevokedError,
   CrossTenantViolationError,
@@ -27,6 +26,7 @@ import {
 import type {
   ServiceRecord,
   PrivateFileMetadata,
+  HttpRequestContext,
 } from '../index.ts';
 
 describe('Security Foundation Test Suite', () => {
@@ -340,7 +340,7 @@ describe('Security Foundation Test Suite', () => {
       permissions: [Permission.WORKORDER_READ],
     });
 
-    const mockRequest = {
+    const mockRequest: HttpRequestContext = {
       path: '/api/v1/work-orders',
       method: 'GET',
       headers: {

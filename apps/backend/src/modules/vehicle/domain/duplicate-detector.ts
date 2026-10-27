@@ -1,5 +1,4 @@
 import type { IVehicleRepository } from './vehicle-repository.interface.ts';
-import type { Vehicle } from './vehicle.ts';
 
 export const DuplicateCheckSeverity = {
   EXACT_CONFLICT: 'EXACT_CONFLICT',

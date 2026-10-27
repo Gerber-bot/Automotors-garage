@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { VehicleCard } from './VehicleCard.tsx';
 import { VoiceRecorder } from './VoiceRecorder.tsx';
 import { AIConfirmationPanel } from './AIConfirmationPanel.tsx';

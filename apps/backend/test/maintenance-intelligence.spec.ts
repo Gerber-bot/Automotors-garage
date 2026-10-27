@@ -328,7 +328,7 @@ describe('Maintenance Intelligence Engine Test Suite', () => {
   // Test 10: Asistencia para Diagnóstico OBD2 con Descargo Obligatorio
   // ============================================================================
   it('10. Diagnóstico OBD2: interpreta códigos SAE con descargo de responsabilidad no vinculante', async () => {
-    mockAi.setCustomCompletion((prompt) =>
+    mockAi.setCustomCompletion((_prompt) =>
       JSON.stringify({
         codesAnalyzed: ['P0300', 'P0171'],
         systemicImpact:

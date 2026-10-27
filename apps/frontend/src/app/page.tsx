@@ -1,13 +1,11 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Header } from '../components/layout/Header.tsx';
 import { ServiceQuickEntry } from '../components/domain/ServiceQuickEntry.tsx';
 import { VehicleCard } from '../components/domain/VehicleCard.tsx';
 import { StatusBadge } from '../components/domain/StatusBadge.tsx';
 import { MaintenanceTimeline } from '../components/domain/MaintenanceTimeline.tsx';
 import { MaintenancePredictionCard } from '../components/domain/MaintenancePredictionCard.tsx';
-import { WorkOrderForm } from '../components/domain/WorkOrderForm.tsx';
 import { EvidenceUploader } from '../components/domain/EvidenceUploader.tsx';
-import { VoiceRecorder } from '../components/domain/VoiceRecorder.tsx';
 import { MOCK_VEHICLES, MOCK_WORK_ORDERS } from '../api/mock-backend.ts';
 import type { Vehicle, WorkOrder } from '../api/contracts.ts';
 
@@ -24,14 +22,14 @@ type ActiveTab =
 export default function AppDashboard() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('DASHBOARD');
   const [vehicles, setVehicles] = useState<Vehicle[]>(MOCK_VEHICLES);
-  const [workOrders, setWorkOrders] = useState<WorkOrder[]>(MOCK_WORK_ORDERS);
+  const [workOrders] = useState<WorkOrder[]>(MOCK_WORK_ORDERS);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle>(MOCK_VEHICLES[0]!);
   const [filterPlate, setFilterPlate] = useState('');
   const [obdCodeInput, setObdCodeInput] = useState('P0300, P0171');
   const [obdResult, setObdResult] = useState<string | null>(null);
 
   const filteredVehicles = vehicles.filter(
-    (v) =>
+    (v: Vehicle) =>
       !filterPlate ||
       (v.plate && v.plate.toLowerCase().includes(filterPlate.toLowerCase())) ||
       v.make.toLowerCase().includes(filterPlate.toLowerCase()) ||

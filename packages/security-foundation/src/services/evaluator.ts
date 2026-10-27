@@ -166,7 +166,7 @@ export class ResourceAccessEvaluator {
       }
 
       if (resourceType === ResourceType.WORK_ORDER) {
-        if (action === Action.READ || action === Action.DIAGNOSE || action === Action.UPDATE) {
+        if (action === Action.READ || action === Action.UPDATE) {
           return { allowed: true };
         }
         return { allowed: false, reason: 'Mechanics cannot close or approve invoices for work orders.' };

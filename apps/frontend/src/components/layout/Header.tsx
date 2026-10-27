@@ -1,4 +1,3 @@
-import React from 'react';
 import { WorkshopSelector } from '../domain/WorkshopSelector.tsx';
 
 export interface HeaderProps {
@@ -29,7 +28,7 @@ export function Header({
       <div className="flex items-center gap-3">
         <WorkshopSelector
           workshops={[
-            { id: 'w-alpha', name: 'Alpha Motors Garage', role: activeRole },
+            { id: 'w-alpha', name: workshopName, role: activeRole },
             { id: 'w-bravo', name: 'Bravo Racing Shop', role: 'MECHANIC' },
           ]}
           activeWorkshopId="w-alpha"

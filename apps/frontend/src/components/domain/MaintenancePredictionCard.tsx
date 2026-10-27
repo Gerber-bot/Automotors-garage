@@ -1,4 +1,3 @@
-import React from 'react';
 import { StatusBadge } from './StatusBadge.tsx';
 
 export interface MaintenancePredictionProps {
@@ -22,8 +21,6 @@ export function MaintenancePredictionCard({
   sourceCitation,
   warning,
 }: MaintenancePredictionProps) {
-  const isInsufficient = status === 'INSUFFICIENT_DATA';
-
   return (
     <div className="p-4 bg-slate-900/90 border border-slate-800 rounded-xl flex flex-col justify-between">
       <div>

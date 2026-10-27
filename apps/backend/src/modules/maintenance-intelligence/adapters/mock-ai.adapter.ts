@@ -94,7 +94,7 @@ export class MockTranscriptionProvider implements TranscriptionProviderPort {
 
   public async transcribe(
     audioBuffer: Buffer,
-    mimeType: string,
+    _mimeType: string,
     options?: TranscriptionOptions
   ): Promise<TranscriptionResult> {
     if (this.shouldFail) {
