@@ -5,10 +5,16 @@ import { HttpApp } from './infrastructure/http/http-app.ts';
 
 const PORT = Number(process.env.PORT || 4000);
 const NODE_ENV = process.env.NODE_ENV || 'development';
+const HOST = process.env.HOST || '127.0.0.1';
 const pidFile = process.env.PID_FILE || './.run/server.pid';
 
 async function bootstrap() {
-  console.log(`🏎️  Bootstrapping Automotors Garage Backend API [ENV: ${NODE_ENV}]...`);
+  if (NODE_ENV === 'production' && HOST === '0.0.0.0' && process.env.ALLOW_PRODUCTION_LAN !== 'true') {
+    console.error('❌ SECURITY ALERT: Binding to 0.0.0.0 in production is prohibited without explicit ALLOW_PRODUCTION_LAN=true.');
+    process.exit(1);
+  }
+
+  console.log(`🏎️  Bootstrapping Automotors Garage Backend API [ENV: ${NODE_ENV}] [HOST: ${HOST}]...`);
 
   let db;
   let dataDir: string | undefined;
@@ -44,7 +50,7 @@ async function bootstrap() {
     process.exit(1);
   });
 
-  server.listen(PORT, '0.0.0.0', () => {
+  server.listen(PORT, HOST, () => {
     // Record PID for clean process management
     try {
       fs.mkdirSync(path.dirname(pidFile), { recursive: true });
@@ -53,8 +59,13 @@ async function bootstrap() {
       // non-fatal
     }
 
-    console.log(`🚀 Automotors Garage API listening on http://localhost:${PORT}`);
-    console.log(`📋 Health check: http://localhost:${PORT}/health/live`);
+    if (HOST === '0.0.0.0') {
+      console.log(`🚀 Automotors Garage API listening on 0.0.0.0:${PORT} [LAN ACCESS ENABLED]`);
+      console.log(`📋 Health check (Local): http://127.0.0.1:${PORT}/health/live`);
+    } else {
+      console.log(`🚀 Automotors Garage API listening on http://${HOST}:${PORT} [LOOPBACK ONLY]`);
+      console.log(`📋 Health check: http://${HOST}:${PORT}/health/live`);
+    }
   });
 
   const gracefulShutdown = async () => {

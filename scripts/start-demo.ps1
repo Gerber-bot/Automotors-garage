@@ -14,6 +14,7 @@
 [CmdletBinding()]
 param(
     [int]$Port = 4000,
+    [string]$HostAddress = "127.0.0.1",
     [switch]$NoBrowser,
     [switch]$Foreground
 )
@@ -62,6 +63,7 @@ Write-Host "`nPASO 3/4: Iniciando servidor en modo DEMO..." -ForegroundColor Yel
 
 $env:NODE_ENV = "demo"
 $env:PORT = "$Port"
+$env:HOST = if ($env:HOST) { $env:HOST } else { $HostAddress }
 $env:PG_DATA_DIR = $demoDataDir
 $env:PID_FILE = $pidFile
 
