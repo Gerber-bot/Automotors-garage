@@ -8,6 +8,11 @@
     "@automotors/security-foundation": "file:./packages/security-foundation"
   },
   "scripts": {
+    "dev": "powershell -ExecutionPolicy Bypass -File scripts/start-dev.ps1",
+    "dev:demo": "powershell -ExecutionPolicy Bypass -File scripts/start-demo.ps1",
+    "dev:stop": "powershell -ExecutionPolicy Bypass -File scripts/stop-dev.ps1",
+    "dev:check": "powershell -ExecutionPolicy Bypass -File scripts/check-env.ps1",
+    "dev:health": "powershell -ExecutionPolicy Bypass -File scripts/check-health.ps1",
     "start:api": "node --experimental-strip-types apps/backend/src/main.ts",
     "seed:demo": "node --experimental-strip-types scripts/seed-demo.ts",
     "build": "pnpm -r run build",

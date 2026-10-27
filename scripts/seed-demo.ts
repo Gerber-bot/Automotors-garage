@@ -10,7 +10,9 @@ async function main() {
   }
 
   let db;
-  const dataDir = process.env.PG_DATA_DIR || './.data/postgres';
+  const env = process.env.NODE_ENV || 'development';
+  const defaultDataDir = env === 'demo' ? './.data/postgres_demo' : './.data/postgres_dev';
+  const dataDir = process.env.PG_DATA_DIR || defaultDataDir;
 
   try {
     const pool = DatabaseFactory.createPool({
@@ -44,6 +46,16 @@ async function main() {
   console.log('   - Mario Rossi (Senior / Admin): mario@alphamotors.com / Password123!');
   console.log('   - Lucas Gómez (Mechanic): lucas@alphamotors.com / Password123!');
   console.log('   - Workshop ID: w-alpha (Alpha Motors Garage)');
+
+  try {
+    const client = (db as any)?.$client || (db as any)?.session?.client;
+    if (client?.close) {
+      await client.close();
+      console.log('✅ Demo database connections closed cleanly.');
+    }
+  } catch {
+    // non-fatal
+  }
 }
 
 main().catch((err) => {
