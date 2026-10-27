@@ -1,0 +1,118 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Automotors Garage - Vehicle & History API",
+    "version": "1.0.0",
+    "description": "Auditable vehicle registry, work orders lifecycle, and tamper-proof maintenance passport."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:4000/api/v1",
+      "description": "Local development server"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "CreateVehicleDto": {
+        "type": "object",
+        "required": ["make", "model", "year", "currentMileage"],
+        "properties": {
+          "vin": { "type": "string", "example": "1HGCR2F8XHA000000" },
+          "plate": { "type": "string", "example": "AF123CD" },
+          "make": { "type": "string", "example": "Toyota" },
+          "model": { "type": "string", "example": "Corolla" },
+          "year": { "type": "integer", "example": 2022 },
+          "engine": { "type": "string", "example": "1.8 Hybrid" },
+          "fuelType": { "type": "string", "enum": ["GASOLINE", "DIESEL", "CNG", "ELECTRIC", "HYBRID"] },
+          "currentMileage": { "type": "integer", "example": 35000 }
+        }
+      },
+      "CreateWorkOrderDto": {
+        "type": "object",
+        "required": ["vehicleId", "customerId", "reportedMileage", "reportedIssue"],
+        "properties": {
+          "vehicleId": { "type": "string", "format": "uuid" },
+          "customerId": { "type": "string", "format": "uuid" },
+          "assignedMechanicId": { "type": "string", "format": "uuid" },
+          "reportedMileage": { "type": "integer", "example": 35200 },
+          "reportedIssue": { "type": "string", "example": "Front brake squeal during deceleration." },
+          "initialCondition": { "type": "string", "example": "Vehicle received with clean exterior, slight brake pedal vibration." }
+        }
+      },
+      "CloseWorkOrderDto": {
+        "type": "object",
+        "properties": {
+          "idempotencyKey": { "type": "string", "example": "close-wo-98a7-uuid" },
+          "internalNotes": { "type": "string", "example": "Customer was in a hurry; replaced brake pads with OEM parts." },
+          "partsCost": { "type": "number", "example": 85.5 },
+          "laborCost": { "type": "number", "example": 60.0 }
+        }
+      },
+      "AppendCorrectionDto": {
+        "type": "object",
+        "required": ["reason", "changes"],
+        "properties": {
+          "reason": { "type": "string", "example": "Corrected typo in brake pad part serial number." },
+          "changes": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "oldValue": {},
+                "newValue": {}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/vehicles": {
+      "post": {
+        "summary": "Register new vehicle",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateVehicleDto" } } }
+        },
+        "responses": {
+          "201": { "description": "Vehicle registered successfully." },
+          "409": { "description": "Exact duplicate VIN conflict." }
+        }
+      }
+    },
+    "/vehicles/{id}/passport": {
+      "get": {
+        "summary": "Get vehicle digital maintenance passport",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "public", "in": "query", "schema": { "type": "boolean" }, "description": "Request sanitized public projection" }
+        ],
+        "responses": {
+          "200": { "description": "Passport records and mileage timeline." }
+        }
+      }
+    },
+    "/work-orders/{id}/close": {
+      "post": {
+        "summary": "Close work order and publish verified maintenance record",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CloseWorkOrderDto" } } }
+        },
+        "responses": {
+          "200": { "description": "Work order closed and added to vehicle history ledger." }
+        }
+      }
+    }
+  }
+}

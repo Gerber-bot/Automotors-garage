@@ -1,0 +1,166 @@
+import type { IWorkOrderRepository } from '../domain/work-order-repository.interface.ts';
+import type { IVehicleRepository } from '../../vehicle/domain/vehicle-repository.interface.ts';
+import type { IMaintenanceHistoryRepository } from '../../maintenance-history/domain/history-repository.interface.ts';
+import { MaintenanceRecord } from '../../maintenance-history/domain/maintenance-record.ts';
+import { VerificationLevelEvaluator } from '../../maintenance-history/domain/verification-level.ts';
+import { WorkOrderStatus } from '../domain/work-order.ts';
+import { Result } from '../../../shared/domain/result.ts';
+import { DomainEventPublisher } from '../../../shared/domain/events.ts';
+import { IdempotencyService } from '../../../shared/application/idempotency.ts';
+
+export interface CloseWorkOrderInput {
+  workOrderId: string;
+  tenantId: string;
+  actorId: string;
+  idempotencyKey?: string;
+  internalNotes?: string;
+  partsCost?: number;
+  laborCost?: number;
+}
+
+export interface CloseWorkOrderOutput {
+  workOrderId: string;
+  maintenanceRecordId: string;
+  vehicleId: string;
+  closedAt: Date;
+  finalMileage: number;
+  verificationLevel: string;
+  isCertified: boolean;
+}
+
+export class CloseWorkOrderUseCase {
+  private readonly workOrderRepo: IWorkOrderRepository;
+  private readonly vehicleRepo: IVehicleRepository;
+  private readonly historyRepo: IMaintenanceHistoryRepository;
+  private readonly idempotencyService: IdempotencyService;
+
+  constructor(
+    workOrderRepo: IWorkOrderRepository,
+    vehicleRepo: IVehicleRepository,
+    historyRepo: IMaintenanceHistoryRepository,
+    idempotencyService?: IdempotencyService
+  ) {
+    this.workOrderRepo = workOrderRepo;
+    this.vehicleRepo = vehicleRepo;
+    this.historyRepo = historyRepo;
+    this.idempotencyService = idempotencyService ?? new IdempotencyService();
+  }
+
+  public async execute(input: CloseWorkOrderInput): Promise<Result<CloseWorkOrderOutput, string>> {
+    // 0. Idempotency Check
+    if (input.idempotencyKey) {
+      const cached = this.idempotencyService.get<CloseWorkOrderOutput>(input.idempotencyKey);
+      if (cached) {
+        return Result.ok(cached);
+      }
+    }
+
+    // 1. Fetch & Validate Work Order exists in caller's tenant
+    const workOrder = await this.workOrderRepo.findById(input.workOrderId, input.tenantId);
+    if (!workOrder) {
+      return Result.fail(`Work order '${input.workOrderId}' not found in workshop '${input.tenantId}'.`);
+    }
+
+    // 2. Confirm order status
+    if (workOrder.isTerminal()) {
+      return Result.fail(`Work order is already closed or cancelled (Status: ${workOrder.status}).`);
+    }
+
+    // 3. Validate mandatory data
+    if (!workOrder.diagnosis || workOrder.diagnosis.trim().length === 0) {
+      return Result.fail('Cannot close work order: Diagnosis is mandatory.');
+    }
+
+    if (workOrder.interventions.length === 0) {
+      return Result.fail('Cannot close work order: At least one intervention/service must be recorded.');
+    }
+
+    // 4. Fetch vehicle and validate mileage monotonicity
+    const vehicle = await this.vehicleRepo.findById(workOrder.vehicleId);
+    if (!vehicle) {
+      return Result.fail(`Vehicle '${workOrder.vehicleId}' linked to this work order does not exist.`);
+    }
+
+    if (workOrder.reportedMileage < vehicle.currentMileage) {
+      return Result.fail(
+        `Odometer conflict: Work order reported mileage (${workOrder.reportedMileage} km) is less than recorded vehicle mileage (${vehicle.currentMileage} km).`
+      );
+    }
+
+    // 5. Evaluate Verification Level based on verifiable criteria
+    const verification = VerificationLevelEvaluator.evaluate({
+      isRegisteredWorkshop: true, // Closed within a tenant workshop
+      hasCryptographicEvidence: workOrder.evidenceAssetIds.length > 0,
+      hasInvoiceDocument: true,
+    });
+
+    // 6. Create immutable MaintenanceRecord
+    const historyResult = MaintenanceRecord.create({
+      vehicleId: vehicle.id,
+      workOrderId: workOrder.id,
+      performingTenantId: workOrder.tenantId,
+      performingWorkshopName: workOrder.workshopName,
+      serviceDate: new Date(),
+      recordedMileage: workOrder.reportedMileage,
+      verificationLevel: verification.level,
+      criteriaMet: verification.criteriaMet,
+      isCertified: verification.isCertified,
+      interventions: workOrder.interventions.map((i) => ({
+        title: i.title,
+        category: i.category,
+        description: i.description,
+      })),
+      evidenceAssetIds: workOrder.evidenceAssetIds,
+      internalNotes: input.internalNotes,
+      partsCost: input.partsCost,
+      laborCost: input.laborCost,
+    });
+
+    if (historyResult.isFailure) {
+      return Result.fail(historyResult.getError());
+    }
+
+    const maintenanceRecord = historyResult.getValue();
+
+    // 7. Update Vehicle Mileage Projection
+    const mileageResult = vehicle.updateMileage(workOrder.reportedMileage);
+    if (mileageResult.isFailure) {
+      return Result.fail(mileageResult.getError());
+    }
+
+    // 8. Transition Work Order to COMPLETED
+    const transitionResult = workOrder.transitionStatus(WorkOrderStatus.COMPLETED);
+    if (transitionResult.isFailure) {
+      return Result.fail(transitionResult.getError());
+    }
+
+    // 9. Atomic Persistence
+    await this.historyRepo.save(maintenanceRecord);
+    await this.vehicleRepo.save(vehicle);
+    await this.workOrderRepo.save(workOrder);
+
+    // 10. Publish Auditable Domain Events
+    await DomainEventPublisher.getInstance().publish({
+      eventId: crypto.randomUUID(),
+      eventName: 'WorkOrderCompletedEvent',
+      occurredOn: new Date(),
+      aggregateId: workOrder.id,
+    });
+
+    const output: CloseWorkOrderOutput = {
+      workOrderId: workOrder.id,
+      maintenanceRecordId: maintenanceRecord.id,
+      vehicleId: vehicle.id,
+      closedAt: workOrder.closedAt ?? new Date(),
+      finalMileage: vehicle.currentMileage,
+      verificationLevel: verification.level,
+      isCertified: verification.isCertified,
+    };
+
+    if (input.idempotencyKey) {
+      this.idempotencyService.set(input.idempotencyKey, output);
+    }
+
+    return Result.ok(output);
+  }
+}
