@@ -5,6 +5,7 @@ export * from './domain/tenant-context.ts';
 export * from './domain/policies.ts';
 export * from './domain/errors.ts';
 export * from './domain/audit-events.ts';
+export * from './domain/session-repository.port.ts';
 
 // Services
 export * from './services/evaluator.ts';

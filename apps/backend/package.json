@@ -4,11 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "start": "node --experimental-strip-types src/main.ts",
     "test": "node --experimental-strip-types --test test/vehicle-history-engine.spec.ts test/maintenance-intelligence.spec.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@automotors/security-foundation": "workspace:*",
+    "@automotors/database": "file:../../packages/database",
+    "@automotors/security-foundation": "file:../../packages/security-foundation",
     "zod": "^3.23.8"
   },
   "devDependencies": {

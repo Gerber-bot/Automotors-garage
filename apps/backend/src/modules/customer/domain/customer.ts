@@ -39,6 +39,16 @@ export class Customer extends Entity<CustomerProps> {
     return Result.ok(customer);
   }
 
+  public static restore(
+    props: CustomerProps,
+    id: string,
+    createdAt?: Date,
+    updatedAt?: Date,
+    version?: number
+  ): Customer {
+    return new Customer(props, id, createdAt, updatedAt, version);
+  }
+
   public get tenantId(): string {
     return this.props.tenantId;
   }

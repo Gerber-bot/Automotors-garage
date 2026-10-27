@@ -44,6 +44,15 @@ export class MaintenanceRecord extends Entity<MaintenanceRecordProps> {
     return Result.ok(record);
   }
 
+  public static restore(
+    props: MaintenanceRecordProps,
+    id: string,
+    createdAt?: Date,
+    updatedAt?: Date
+  ): MaintenanceRecord {
+    return new MaintenanceRecord(props, id, createdAt, updatedAt);
+  }
+
   public get vehicleId(): string {
     return this.props.vehicleId;
   }

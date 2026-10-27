@@ -83,8 +83,11 @@ export class ApiClient {
       if ((err as Error).message?.includes('Session has expired')) {
         throw err;
       }
-      // In local development or isolated frontend mode, fallback to mock data
-      return this.handleOfflineMock<T>(endpoint, options);
+      // Explicit offline mock mode only when explicitly enabled (never automatic fallback)
+      if (this.useOfflineMockFallback) {
+        return this.handleOfflineMock<T>(endpoint, options);
+      }
+      throw new Error(`API communication failure on ${endpoint}: ${(err as Error).message}`);
     }
   }
 

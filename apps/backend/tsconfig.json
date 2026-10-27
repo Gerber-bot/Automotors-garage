@@ -2,7 +2,11 @@
   "extends": "../../packages/tsconfig/base.json",
   "compilerOptions": {
     "outDir": "./dist",
-    "rootDir": "./"
+    "baseUrl": "./",
+    "paths": {
+      "@automotors/security-foundation": ["../../packages/security-foundation/src/index.ts"],
+      "@automotors/database": ["../../packages/database/src/index.ts"]
+    }
   },
   "include": ["src/**/*", "test/**/*"]
 }

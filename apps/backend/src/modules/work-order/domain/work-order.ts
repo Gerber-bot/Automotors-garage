@@ -91,6 +91,16 @@ export class WorkOrder extends Entity<WorkOrderProps> {
     return Result.ok(workOrder);
   }
 
+  public static restore(
+    props: WorkOrderProps,
+    id: string,
+    createdAt?: Date,
+    updatedAt?: Date,
+    version?: number
+  ): WorkOrder {
+    return new WorkOrder(props, id, createdAt, updatedAt, version);
+  }
+
   public get tenantId(): string {
     return this.props.tenantId;
   }

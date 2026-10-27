@@ -7,6 +7,7 @@ import { WorkOrderStatus } from '../domain/work-order.ts';
 import { Result } from '../../../shared/domain/result.ts';
 import { DomainEventPublisher } from '../../../shared/domain/events.ts';
 import { IdempotencyService } from '../../../shared/application/idempotency.ts';
+import type { IUnitOfWork } from '../../../shared/application/unit-of-work.ts';
 
 export interface CloseWorkOrderInput {
   workOrderId: string;
@@ -33,17 +34,20 @@ export class CloseWorkOrderUseCase {
   private readonly vehicleRepo: IVehicleRepository;
   private readonly historyRepo: IMaintenanceHistoryRepository;
   private readonly idempotencyService: IdempotencyService;
+  private readonly unitOfWork?: IUnitOfWork;
 
   constructor(
     workOrderRepo: IWorkOrderRepository,
     vehicleRepo: IVehicleRepository,
     historyRepo: IMaintenanceHistoryRepository,
-    idempotencyService?: IdempotencyService
+    idempotencyService?: IdempotencyService,
+    unitOfWork?: IUnitOfWork
   ) {
     this.workOrderRepo = workOrderRepo;
     this.vehicleRepo = vehicleRepo;
     this.historyRepo = historyRepo;
     this.idempotencyService = idempotencyService ?? new IdempotencyService();
+    this.unitOfWork = unitOfWork;
   }
 
   public async execute(input: CloseWorkOrderInput): Promise<Result<CloseWorkOrderOutput, string>> {
@@ -134,19 +138,6 @@ export class CloseWorkOrderUseCase {
       return Result.fail(transitionResult.getError());
     }
 
-    // 9. Atomic Persistence
-    await this.historyRepo.save(maintenanceRecord);
-    await this.vehicleRepo.save(vehicle);
-    await this.workOrderRepo.save(workOrder);
-
-    // 10. Publish Auditable Domain Events
-    await DomainEventPublisher.getInstance().publish({
-      eventId: crypto.randomUUID(),
-      eventName: 'WorkOrderCompletedEvent',
-      occurredOn: new Date(),
-      aggregateId: workOrder.id,
-    });
-
     const output: CloseWorkOrderOutput = {
       workOrderId: workOrder.id,
       maintenanceRecordId: maintenanceRecord.id,
@@ -157,9 +148,44 @@ export class CloseWorkOrderUseCase {
       isCertified: verification.isCertified,
     };
 
+    // 9. Atomic Persistence (With ACID Unit of Work or in-memory fallback)
+    if (this.unitOfWork) {
+      await this.unitOfWork.execute(async (tx) => {
+        await tx.historyRepo.save(maintenanceRecord);
+        await tx.vehicleRepo.save(vehicle);
+        await tx.workOrderRepo.save(workOrder);
+        await tx.recordOutboxEvent({
+          eventType: 'WorkOrderCompletedEvent',
+          aggregateType: 'WorkOrder',
+          aggregateId: workOrder.id,
+          payload: {
+            workOrderId: workOrder.id,
+            vehicleId: vehicle.id,
+            closedAt: workOrder.closedAt,
+            mileage: vehicle.currentMileage,
+          },
+        });
+        if (input.idempotencyKey) {
+          await tx.saveIdempotencyKey(input.idempotencyKey, input.tenantId, output);
+        }
+      });
+    } else {
+      await this.historyRepo.save(maintenanceRecord);
+      await this.vehicleRepo.save(vehicle);
+      await this.workOrderRepo.save(workOrder);
+    }
+
     if (input.idempotencyKey) {
       this.idempotencyService.set(input.idempotencyKey, output);
     }
+
+    // 10. Publish Auditable Domain Events strictly AFTER transaction commit
+    await DomainEventPublisher.getInstance().publish({
+      eventId: crypto.randomUUID(),
+      eventName: 'WorkOrderCompletedEvent',
+      occurredOn: new Date(),
+      aggregateId: workOrder.id,
+    });
 
     return Result.ok(output);
   }

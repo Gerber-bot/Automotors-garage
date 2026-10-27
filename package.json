@@ -1,17 +1,27 @@
 {
   "name": "automotors-garage",
   "private": true,
+  "type": "module",
   "packageManager": "pnpm@10.5.2",
+  "dependencies": {
+    "@automotors/database": "file:./packages/database",
+    "@automotors/security-foundation": "file:./packages/security-foundation"
+  },
   "scripts": {
     "build": "pnpm -r run build",
-    "test": "node --experimental-strip-types --test packages/security-foundation/src/tests/security-foundation.spec.ts apps/backend/test/vehicle-history-engine.spec.ts apps/backend/test/maintenance-intelligence.spec.ts apps/frontend/test/frontend-components.spec.ts",
+    "test": "node --experimental-strip-types --test packages/security-foundation/src/tests/security-foundation.spec.ts apps/backend/test/vehicle-history-engine.spec.ts apps/backend/test/maintenance-intelligence.spec.ts apps/frontend/test/frontend-components.spec.ts packages/database/test/database.spec.ts tests/integration/persistence-foundation.spec.ts",
     "lint": "pnpm -r run lint",
-    "typecheck": "tsc --project packages/security-foundation/tsconfig.json --noEmit && tsc --project apps/backend/tsconfig.json --noEmit && tsc --project apps/frontend/tsconfig.json --noEmit"
+    "typecheck": "tsc --project packages/security-foundation/tsconfig.json --noEmit && tsc --project packages/database/tsconfig.json --noEmit && tsc --project apps/backend/tsconfig.json --noEmit && tsc --project apps/frontend/tsconfig.json --noEmit"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.12",
     "@types/node": "^26.6.5",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "dotenv": "^18.0.9",
+    "drizzle-orm": "^0.45.4",
+    "pg": "^8.23.1",
     "typescript": "^5.7.3",
     "vitest": "^3.0.7",
     "zod": "^4.6.7"
