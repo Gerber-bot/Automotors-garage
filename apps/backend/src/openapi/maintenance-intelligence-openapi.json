@@ -1,0 +1,67 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Automotors Garage - Maintenance Intelligence API",
+    "version": "1.0.0",
+    "description": "Deterministic preventive maintenance calculator and AI-assisted voice note transcription & OBD2 interpretation."
+  },
+  "paths": {
+    "/maintenance/calculate-preventive": {
+      "post": {
+        "summary": "Calculate deterministic preventive maintenance due targets",
+        "description": "Computes next due mileage, remaining km, calendar due date, and status without LLM involvement.",
+        "responses": {
+          "200": { "description": "Deterministic calculation results list." }
+        }
+      }
+    },
+    "/ai/voice-notes/process": {
+      "post": {
+        "summary": "Transcribe voice note and extract structured proposal",
+        "description": "Transcribes audio dictation and proposes work order line items. Returns requiresConfirmation: true for mandatory human mechanic review.",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": { "type": "string", "format": "binary" },
+                  "vehicleId": { "type": "string" },
+                  "workshopId": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Structured proposal awaiting mechanic confirmation." }
+        }
+      }
+    },
+    "/ai/obd2/interpret": {
+      "post": {
+        "summary": "Interpret OBD2 Diagnostic Trouble Codes (DTC)",
+        "description": "Combines SAE standard definitions with AI guidance to suggest mechanical checks.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["dtcCodes", "vehicleMake", "vehicleModel", "vehicleYear"],
+                "properties": {
+                  "dtcCodes": { "type": "array", "items": { "type": "string" } },
+                  "vehicleMake": { "type": "string" },
+                  "vehicleModel": { "type": "string" },
+                  "vehicleYear": { "type": "integer" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Diagnostic guidance and checklist with disclaimer." }
+        }
+      }
+    }
+  }
+}
