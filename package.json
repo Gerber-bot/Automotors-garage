@@ -8,8 +8,10 @@
     "@automotors/security-foundation": "file:./packages/security-foundation"
   },
   "scripts": {
+    "start:api": "node --experimental-strip-types apps/backend/src/main.ts",
+    "seed:demo": "node --experimental-strip-types scripts/seed-demo.ts",
     "build": "pnpm -r run build",
-    "test": "node --experimental-strip-types --test packages/security-foundation/src/tests/security-foundation.spec.ts apps/backend/test/vehicle-history-engine.spec.ts apps/backend/test/maintenance-intelligence.spec.ts apps/frontend/test/frontend-components.spec.ts packages/database/test/database.spec.ts tests/integration/persistence-foundation.spec.ts",
+    "test": "node --experimental-strip-types --test packages/security-foundation/src/tests/security-foundation.spec.ts apps/backend/test/vehicle-history-engine.spec.ts apps/backend/test/maintenance-intelligence.spec.ts apps/frontend/test/frontend-components.spec.ts packages/database/test/database.spec.ts tests/integration/persistence-foundation.spec.ts tests/integration/milestone-08-e2e.spec.ts",
     "lint": "pnpm -r run lint",
     "typecheck": "tsc --project packages/security-foundation/tsconfig.json --noEmit && tsc --project packages/database/tsconfig.json --noEmit && tsc --project apps/backend/tsconfig.json --noEmit && tsc --project apps/frontend/tsconfig.json --noEmit"
   },

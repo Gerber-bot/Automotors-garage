@@ -13,6 +13,8 @@ export interface CreateWorkOrderInput {
   reportedMileage: number;
   reportedIssue: string;
   initialCondition?: string;
+  diagnosis?: string;
+  interventions?: Array<{ title: string; category?: string; description?: string }>;
 }
 
 export class CreateWorkOrderUseCase {
@@ -51,6 +53,14 @@ export class CreateWorkOrderUseCase {
     }
 
     // 4. Create WorkOrder
+    const mappedInterventions = (input.interventions ?? []).map((it, idx) => ({
+      id: `${input.vehicleId}-int-${idx + 1}`,
+      title: it.title,
+      category: it.category ?? 'GENERAL_SERVICE',
+      description: it.description ?? it.title,
+      laborHours: 1,
+    }));
+
     const orderResult = WorkOrder.create({
       tenantId: input.tenantId,
       workshopName: input.workshopName,
@@ -61,6 +71,8 @@ export class CreateWorkOrderUseCase {
       reportedMileage: input.reportedMileage,
       reportedIssue: input.reportedIssue,
       initialCondition: input.initialCondition,
+      diagnosis: input.diagnosis,
+      interventions: mappedInterventions,
     });
 
     if (orderResult.isFailure) {

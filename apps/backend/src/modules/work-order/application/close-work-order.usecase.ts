@@ -17,10 +17,13 @@ export interface CloseWorkOrderInput {
   internalNotes?: string;
   partsCost?: number;
   laborCost?: number;
+  diagnosis?: string;
+  interventions?: Array<{ title: string; category?: string; description?: string }>;
 }
 
 export interface CloseWorkOrderOutput {
   workOrderId: string;
+  status: string;
   maintenanceRecordId: string;
   vehicleId: string;
   closedAt: Date;
@@ -68,6 +71,23 @@ export class CloseWorkOrderUseCase {
     // 2. Confirm order status
     if (workOrder.isTerminal()) {
       return Result.fail(`Work order is already closed or cancelled (Status: ${workOrder.status}).`);
+    }
+
+    // Attach diagnosis/interventions if provided during closure
+    if ((!workOrder.diagnosis || workOrder.diagnosis.trim().length === 0) && input.diagnosis) {
+      workOrder.recordDiagnosis(input.diagnosis);
+    }
+
+    if (workOrder.interventions.length === 0 && input.interventions && input.interventions.length > 0) {
+      for (const it of input.interventions) {
+        workOrder.addIntervention({
+          id: `${workOrder.id}-int-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          title: it.title,
+          category: it.category ?? 'GENERAL_SERVICE',
+          description: it.description ?? it.title,
+          laborHours: 1,
+        });
+      }
     }
 
     // 3. Validate mandatory data
@@ -140,6 +160,7 @@ export class CloseWorkOrderUseCase {
 
     const output: CloseWorkOrderOutput = {
       workOrderId: workOrder.id,
+      status: 'COMPLETED',
       maintenanceRecordId: maintenanceRecord.id,
       vehicleId: vehicle.id,
       closedAt: workOrder.closedAt ?? new Date(),

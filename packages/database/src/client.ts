@@ -43,8 +43,13 @@ export class DatabaseFactory {
     return drizzleNodePg(pool, { schema });
   }
 
-  public static async createInMemoryTestDb() {
-    const pglite = new PGlite();
+  public static async createInMemoryTestDb(dataDir?: string) {
+    if (dataDir) {
+      const fs = await import('node:fs');
+      fs.mkdirSync(dataDir, { recursive: true });
+    }
+    const pglite = dataDir ? new PGlite(dataDir) : new PGlite();
+    await pglite.waitReady;
     return drizzlePglite(pglite, { schema });
   }
 

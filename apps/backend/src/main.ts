@@ -20,9 +20,10 @@ async function bootstrap() {
     console.log('✅ Connected to PostgreSQL and applied migrations successfully.');
   } catch (err: unknown) {
     console.warn('⚠️  Could not connect to external PostgreSQL, falling back to embedded PGlite engine:', err instanceof Error ? err.message : String(err));
-    db = await DatabaseFactory.createInMemoryTestDb();
+    const dataDir = process.env.PG_DATA_DIR || './.data/postgres';
+    db = await DatabaseFactory.createInMemoryTestDb(dataDir);
     await DatabaseMigrator.runMigrations(db);
-    console.log('✅ Initialized embedded PostgreSQL engine and applied initial schema.');
+    console.log(`✅ Initialized embedded PostgreSQL engine at '${dataDir}' and applied schema.`);
   }
 
   const app = new HttpApp({ db });
