@@ -34,7 +34,9 @@ async function bootstrap() {
     if (pool && typeof pool.end === 'function') {
       try {
         await pool.end();
-      } catch {}
+      } catch {
+        // Ignore errors during pool shutdown before fallback
+      }
     }
     console.warn('⚠️  Could not connect to external PostgreSQL, falling back to embedded PGlite engine:', err instanceof Error ? err.message : String(err));
     const defaultDataDir = NODE_ENV === 'demo' ? './.data/postgres_demo' : './.data/postgres_dev';

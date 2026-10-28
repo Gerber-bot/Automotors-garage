@@ -133,6 +133,12 @@ export class DemoSeeder {
           isActive: true,
         },
         {
+          workshopId: DEMO_IDS.WORKSHOP_BETA,
+          userId: DEMO_IDS.USER_MARIO,
+          role: 'ADMIN',
+          isActive: true,
+        },
+        {
           workshopId: DEMO_IDS.WORKSHOP_ALPHA,
           userId: DEMO_IDS.USER_LUCAS,
           role: 'MECHANIC',

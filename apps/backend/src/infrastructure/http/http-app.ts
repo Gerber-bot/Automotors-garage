@@ -8,6 +8,7 @@ import {
   TenantGuard,
   AuthenticationRequiredError,
   SessionRevokedError,
+  TokenExpiredOrInvalidError,
   CrossTenantViolationError,
   SecurityHeadersService,
   PasswordService,
@@ -241,6 +242,14 @@ export class HttpApp {
       const headersRecord: Record<string, string> = {};
       for (const [k, v] of Object.entries(req.headers)) {
         if (typeof v === 'string') headersRecord[k.toLowerCase()] = v;
+      }
+
+      // Support HttpOnly session cookie as alternative to Bearer header
+      if (!headersRecord['authorization'] && headersRecord['cookie']) {
+        const match = headersRecord['cookie'].match(/automotors_session=([^;]+)/);
+        if (match && match[1]) {
+          headersRecord['authorization'] = `Bearer ${decodeURIComponent(match[1])}`;
+        }
       }
 
       let checkPath = pathname;
@@ -677,7 +686,7 @@ export class HttpApp {
       // Route Not Found
       return this.sendJson(res, 404, { error: `Route '${method} ${pathname}' not found.` }, requestId);
     } catch (err: unknown) {
-      if (err instanceof AuthenticationRequiredError) {
+      if (err instanceof AuthenticationRequiredError || err instanceof TokenExpiredOrInvalidError) {
         return this.sendJson(res, 401, { error: 'Authentication required. Missing or invalid token.' }, requestId);
       }
       if (err instanceof SessionRevokedError) {

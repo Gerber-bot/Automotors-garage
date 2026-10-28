@@ -27,6 +27,8 @@ export const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({
   );
 };
 
+export const LoadingState = LoadingSpinner;
+
 export type SkeletonProps = React.HTMLAttributes<HTMLDivElement>;
 
 export const Skeleton: React.FC<SkeletonProps> = ({ className, ...props }) => {

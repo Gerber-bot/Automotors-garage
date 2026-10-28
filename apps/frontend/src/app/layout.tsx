@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
+import { AuthProvider } from '../context/AuthContext.tsx';
 
 export const metadata: Metadata = {
   title: 'Automotors Garage — Platform Dashboard',
@@ -24,7 +25,7 @@ export default function RootLayout({
   return (
     <html lang="es" className="dark">
       <body className="bg-slate-950 text-slate-100 min-h-screen flex flex-col antialiased selection:bg-emerald-500 selection:text-slate-950">
-        {children}
+        <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
   );
