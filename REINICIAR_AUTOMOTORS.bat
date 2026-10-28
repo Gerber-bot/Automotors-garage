@@ -9,7 +9,7 @@ echo  AUTOMOTORS GARAGE -- REINICIAR SERVICIOS
 echo =======================================================
 echo.
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\restart-dev.ps1" -Port 4000
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\powershell\restart-dev.ps1" -Port 4000
 if %ERRORLEVEL% NEQ 0 (
     echo.
     echo =======================================================
@@ -24,7 +24,7 @@ if %ERRORLEVEL% NEQ 0 (
 
 echo.
 echo Confirmando disponibilidad para abrir el navegador...
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\check-health.ps1" -Port 4000 -Silent
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\utilities\check-health.ps1" -Port 4000 -Silent
 if %ERRORLEVEL% EQU 0 (
     echo Abriendo http://localhost:4000/ en el navegador...
     start http://localhost:4000/

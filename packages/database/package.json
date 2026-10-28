@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@automotors/security-foundation": "file:../security-foundation",
-    "@electric-sql/pglite": "^0.2.14",
+    "@electric-sql/pglite": "^0.5.12",
     "dotenv": "^16.4.7",
     "drizzle-orm": "^0.38.4",
     "pg": "^8.13.1",

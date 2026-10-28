@@ -9,7 +9,7 @@ echo  AUTOMOTORS GARAGE -- CONFIGURACION DE ENTORNO LOCAL
 echo =======================================================
 echo.
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\setup-dev.ps1"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\utilities\setup-dev.ps1"
 if %ERRORLEVEL% NEQ 0 (
     echo.
     echo =======================================================

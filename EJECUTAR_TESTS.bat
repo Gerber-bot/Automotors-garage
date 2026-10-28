@@ -9,7 +9,7 @@ echo  AUTOMOTORS GARAGE -- EJECUTOR DE PRUEBAS
 echo =======================================================
 echo.
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\run-tests.ps1" -Suite all
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\utilities\run-tests.ps1" -Suite all
 set TEST_EXIT_CODE=%ERRORLEVEL%
 
 echo.

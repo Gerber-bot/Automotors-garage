@@ -1,0 +1,9 @@
+node_modules
+.next
+.data
+.run
+.logs
+dist
+build
+coverage
+*.d.ts

@@ -9,7 +9,7 @@ echo  AUTOMOTORS GARAGE -- MODO DEMOSTRACION INTERACTIVA
 echo =======================================================
 echo.
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\start-demo.ps1" -Port 4000
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\powershell\start-demo.ps1" -Port 4000
 if %ERRORLEVEL% NEQ 0 (
     echo.
     echo =======================================================

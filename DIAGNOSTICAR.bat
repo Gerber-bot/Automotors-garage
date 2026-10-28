@@ -10,12 +10,12 @@ echo =======================================================
 echo.
 
 echo [FASE 1/2] Verificando entorno de ejecucion local...
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\check-env.ps1" -Port 4000
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\utilities\check-env.ps1" -Port 4000
 set ENV_EXIT_CODE=%ERRORLEVEL%
 
 echo.
 echo [FASE 2/2] Verificando conectividad y estado del servidor HTTP...
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\check-health.ps1" -Port 4000
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\utilities\check-health.ps1" -Port 4000
 set HEALTH_EXIT_CODE=%ERRORLEVEL%
 
 echo.

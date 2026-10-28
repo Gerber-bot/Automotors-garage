@@ -10,7 +10,7 @@ echo =======================================================
 echo.
 
 echo [1/3] Verificando entorno de ejecucion...
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\check-env.ps1" -Port 4000
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\utilities\check-env.ps1" -Port 4000
 if %ERRORLEVEL% NEQ 0 (
     echo.
     echo [ERROR] La verificacion de entorno fallo. Codigo de salida: %ERRORLEVEL%
@@ -19,7 +19,7 @@ if %ERRORLEVEL% NEQ 0 (
 
 echo.
 echo [2/3] Iniciando servidor backend de desarrollo...
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\start-dev.ps1" -Port 4000
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\powershell\start-dev.ps1" -Port 4000
 if %ERRORLEVEL% NEQ 0 (
     echo.
     echo [ERROR] No se pudo iniciar el servidor. Codigo de salida: %ERRORLEVEL%
@@ -28,7 +28,7 @@ if %ERRORLEVEL% NEQ 0 (
 
 echo.
 echo [3/3] Confirmando disponibilidad del servicio...
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\check-health.ps1" -Port 4000 -Silent
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\utilities\check-health.ps1" -Port 4000 -Silent
 if %ERRORLEVEL% NEQ 0 (
     echo.
     echo [ADVERTENCIA] El servidor fue iniciado pero el healthcheck no respondio a tiempo.

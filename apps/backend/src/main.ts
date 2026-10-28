@@ -18,8 +18,9 @@ async function bootstrap() {
 
   let db;
   let dataDir: string | undefined;
+  let pool: any;
   try {
-    const pool = DatabaseFactory.createPool({
+    pool = DatabaseFactory.createPool({
       host: process.env.POSTGRES_HOST || 'localhost',
       port: Number(process.env.POSTGRES_PORT || 5432),
       user: process.env.POSTGRES_USER || 'postgres',
@@ -30,6 +31,11 @@ async function bootstrap() {
     await DatabaseMigrator.runMigrations(db);
     console.log('✅ Connected to PostgreSQL and applied migrations successfully.');
   } catch (err: unknown) {
+    if (pool && typeof pool.end === 'function') {
+      try {
+        await pool.end();
+      } catch {}
+    }
     console.warn('⚠️  Could not connect to external PostgreSQL, falling back to embedded PGlite engine:', err instanceof Error ? err.message : String(err));
     const defaultDataDir = NODE_ENV === 'demo' ? './.data/postgres_demo' : './.data/postgres_dev';
     dataDir = process.env.PG_DATA_DIR || defaultDataDir;

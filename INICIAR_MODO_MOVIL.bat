@@ -9,7 +9,7 @@ echo  AUTOMOTORS GARAGE -- MODO LAN & ACCESO MOVIL
 echo =======================================================
 echo.
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\start-mobile.ps1" -Port 4000
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\powershell\start-mobile.ps1" -Port 4000
 if %ERRORLEVEL% NEQ 0 (
     echo.
     echo =======================================================
