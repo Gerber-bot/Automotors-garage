@@ -30,7 +30,7 @@ export const DEMO_IDS = {
   USER_MARIO: 'b0000000-0000-4000-8000-000000000001',
   USER_LUCAS: 'b0000000-0000-4000-8000-000000000002',
   USER_BETA_CARLOS: 'b0000000-0000-4000-8000-000000000003',
-  CUSTOMER_MAURICIO: 'c0000000-0000-4000-8000-000000000001',
+  CUSTOMER_DEMO_VIP: 'c0000000-0000-4000-8000-000000000001',
   CUSTOMER_CARLA: 'c0000000-0000-4000-8000-000000000002',
   CUSTOMER_ESTEBAN: 'c0000000-0000-4000-8000-000000000003',
   VEHICLE_VW_GOLF: 'd0000000-0000-4000-8000-000000000001',
@@ -158,11 +158,11 @@ export class DemoSeeder {
       .insert(customers)
       .values([
         {
-          id: DEMO_IDS.CUSTOMER_MAURICIO,
+          id: DEMO_IDS.CUSTOMER_DEMO_VIP,
           workshopId: DEMO_IDS.WORKSHOP_ALPHA,
-          firstName: 'Mauricio',
-          lastName: 'Fernández (Cliente VIP)',
-          email: 'mauricio@cliente.com',
+          firstName: 'Carlos',
+          lastName: 'Méndez (Cliente VIP)',
+          email: 'carlos.mendez@cliente.com',
           phone: '+54 9 11 4444-5555',
           documentId: '20-33445566-7',
           notes: 'Cliente de confianza. Priorizar turno.',
@@ -190,7 +190,7 @@ export class DemoSeeder {
       ])
       .onConflictDoNothing();
 
-    // 5. Vehicles (5 vehículos, destacando el Volkswagen Golf VII de Mauricio)
+    // 5. Vehicles (5 vehículos, destacando el Volkswagen Golf VII de demostración)
     await this.db
       .insert(vehicles)
       .values([
@@ -204,7 +204,7 @@ export class DemoSeeder {
           engine: '1.4 TSI 150 CV (EA211)',
           fuelType: 'Nafta Premium',
           currentMileage: 58400,
-          metadata: { isDemoData: true, featuredFor: 'Mauricio' },
+          metadata: { isDemoData: true, featured: true },
         },
         {
           id: DEMO_IDS.VEHICLE_TOYOTA_COROLLA,
@@ -264,7 +264,7 @@ export class DemoSeeder {
         {
           id: '30000000-0000-4000-8000-000000000001',
           vehicleId: DEMO_IDS.VEHICLE_VW_GOLF,
-          customerId: DEMO_IDS.CUSTOMER_MAURICIO,
+          customerId: DEMO_IDS.CUSTOMER_DEMO_VIP,
           workshopId: DEMO_IDS.WORKSHOP_ALPHA,
           isCurrentOwner: true,
         },
@@ -355,7 +355,7 @@ export class DemoSeeder {
         id: DEMO_IDS.WO_VW_GOLF_45K,
         workshopId: DEMO_IDS.WORKSHOP_ALPHA,
         vehicleId: DEMO_IDS.VEHICLE_VW_GOLF,
-        customerId: DEMO_IDS.CUSTOMER_MAURICIO,
+        customerId: DEMO_IDS.CUSTOMER_DEMO_VIP,
         assignedMechanicId: DEMO_IDS.USER_MARIO,
         reportedMileage: 45000,
         status: 'COMPLETED',

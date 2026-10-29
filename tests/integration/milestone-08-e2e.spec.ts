@@ -73,7 +73,7 @@ describe('Milestone 08: Full Stack Integration, E2E & Demo Readiness Test Suite'
     assert.ok(typeof readyData.latencyMs === 'number');
   });
 
-  it('2. Servidor Web: GET / y GET /demo sirven la aplicación interactiva para Mauricio', async () => {
+  it('2. Servidor Web: GET / y GET /demo sirven la aplicación interactiva de demostración', async () => {
     const res = await fetch(`${baseUrl}/`);
     assert.equal(res.status, 200);
     assert.equal(res.headers.get('content-type')?.includes('text/html'), true);
@@ -81,7 +81,7 @@ describe('Milestone 08: Full Stack Integration, E2E & Demo Readiness Test Suite'
     assert.ok(html.includes('AUTOMOTORS GARAGE'));
     assert.ok(html.includes('Quick Service Entry'));
     assert.ok(html.includes('Volkswagen Golf VII'));
-    assert.ok(html.includes('DEMO — MAURICIO REVIEW'));
+    assert.ok(html.includes('DEMO — AUTOMOTORS GARAGE'));
   });
 
   it('3. Re-sembrado Demo: POST /api/v1/demo/seed es idempotente y seguro', async () => {
@@ -157,7 +157,7 @@ describe('Milestone 08: Full Stack Integration, E2E & Demo Readiness Test Suite'
       headers: authHeaders,
       body: JSON.stringify({
         vehicleId,
-        customerId: DEMO_IDS.CUSTOMER_MAURICIO,
+        customerId: DEMO_IDS.CUSTOMER_DEMO_VIP,
         reportedMileage: 45000,
         reportedIssue: 'Service de rutina y cambio de aceite',
         initialCondition: 'Sin detalles de chapa ni fugas',
@@ -291,7 +291,7 @@ describe('Milestone 08: Full Stack Integration, E2E & Demo Readiness Test Suite'
     });
     const { token } = await loginRes.json();
 
-    // Ejecutar Quick Service en el Volkswagen Golf destacado de Mauricio
+    // Ejecutar Quick Service en el Volkswagen Golf destacado de demostración
     const qsRes = await fetch(`${baseUrl}/api/v1/work-orders/quick-service`, {
       method: 'POST',
       headers: {

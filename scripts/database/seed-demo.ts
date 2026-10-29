@@ -42,7 +42,7 @@ async function main() {
   console.log(`   - Work Orders: ${result.workOrdersCount}`);
   console.log(`   - Certified Maintenance Records: ${result.maintenanceRecordsCount}`);
   console.log(`   - Documented OEM Intervals: ${result.intervalsCount}`);
-  console.log('\n🔑 Demo Credentials for Mauricio:');
+  console.log('\n🔑 Demo Credentials:');
   console.log('   - Mario Rossi (Senior / Admin): mario@alphamotors.com / Password123!');
   console.log('   - Lucas Gómez (Mechanic): lucas@alphamotors.com / Password123!');
   console.log('   - Workshop ID: w-alpha (Alpha Motors Garage)');

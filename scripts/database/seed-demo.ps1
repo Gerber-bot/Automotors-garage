@@ -2,7 +2,7 @@
 .SYNOPSIS
     Ejecuta el sembrado idempotente de datos demo para Automotors Garage.
 .DESCRIPTION
-    Carga talleres, clientes VIP (Mauricio), vehiculos (VW Golf VII) y reglas OEM
+    Carga talleres, clientes VIP (Demo), vehiculos (VW Golf VII) y reglas OEM
     en la base de datos de demostracion de forma aislada e idempotente.
 .PARAMETER DataDir
     Directorio de almacenamiento de datos de la base (por defecto: ./.data/postgres_demo).

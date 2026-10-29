@@ -44,7 +44,7 @@ export function getDemoDashboardHtml(): string {
   <!-- TOP BANNER: DEMO IDENTIFIER -->
   <div class="bg-amber-500/10 border-b border-amber-500/30 px-3 md:px-4 py-1.5 flex flex-wrap items-center justify-between gap-1.5 text-xs text-amber-300">
     <div class="flex items-center gap-2 min-w-0">
-      <span class="px-2 py-0.5 rounded bg-amber-500 text-slate-950 font-black text-[10px] tracking-wider uppercase shrink-0">DEMO — MAURICIO REVIEW</span>
+      <span class="px-2 py-0.5 rounded bg-amber-500 text-slate-950 font-black text-[10px] tracking-wider uppercase shrink-0">DEMO — AUTOMOTORS GARAGE</span>
       <span class="truncate hidden sm:inline">Persistencia PostgreSQL + Clean Architecture. Sin mocks silenciosos.</span>
       <span class="truncate sm:hidden text-[11px]">Entorno Demo Real</span>
     </div>
@@ -166,12 +166,12 @@ export function getDemoDashboardHtml(): string {
         </button>
       </div>
 
-      <!-- Featured Vehicle Card: VW GOLF FOR MAURICIO -->
+      <!-- Featured Vehicle Card: VW GOLF DEMO -->
       <div class="bg-slate-900/80 border border-emerald-500/30 rounded-2xl p-4 sm:p-6 shadow-md space-y-4">
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-800">
           <div class="flex flex-wrap items-center gap-2">
             <span class="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 font-bold text-xs rounded border border-emerald-500/30 uppercase tracking-wider shrink-0">
-              Vehículo Destacado para Mauricio
+              Vehículo Destacado (Demostración)
             </span>
             <h3 class="font-bold text-sm sm:text-base text-white">Volkswagen Golf VII 1.4 TSI Highline DSG (2019)</h3>
           </div>
@@ -186,7 +186,7 @@ export function getDemoDashboardHtml(): string {
           </div>
           <div class="p-3 bg-slate-950 rounded-xl border border-slate-800">
             <span class="text-slate-500 block text-[10px]">Cliente Propietario</span>
-            <span class="text-slate-200 font-bold text-xs sm:text-sm truncate block">Mauricio Fernández</span>
+            <span class="text-slate-200 font-bold text-xs sm:text-sm truncate block">Carlos Méndez (Cliente VIP)</span>
           </div>
           <div class="p-3 bg-slate-950 rounded-xl border border-slate-800">
             <span class="text-slate-500 block text-[10px]">Último Service Realizado</span>

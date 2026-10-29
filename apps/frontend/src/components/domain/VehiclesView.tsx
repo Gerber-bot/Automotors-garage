@@ -6,11 +6,6 @@ import {
   Search,
   Plus,
   RotateCw,
-  FileText,
-  ShieldCheck,
-  Zap,
-  Calendar,
-  Cpu,
   AlertCircle,
   CheckCircle2,
   X,
@@ -20,11 +15,9 @@ import {
 import {
   Button,
   Card,
-  Badge,
   Input,
   Select,
   Dialog,
-  Sheet,
   Table,
   TableHeader,
   TableBody,
@@ -39,6 +32,7 @@ import {
 import { ApiClient, ApiError } from '../../api/client.ts';
 import { type Vehicle, CreateVehicleDtoSchema } from '../../api/contracts.ts';
 import { VehicleCard } from './VehicleCard.tsx';
+import { VehicleDetailModal } from './VehicleDetailModal.tsx';
 
 export interface VehiclesViewProps {
   onQuickServiceForVehicle?: (vehicle: Vehicle) => void;
@@ -95,10 +89,46 @@ export function VehiclesView({ onQuickServiceForVehicle }: VehiclesViewProps) {
     [apiClient]
   );
 
+  // Open Vehicle Detail
+  const handleOpenDetail = React.useCallback(
+    async (vehicle: Vehicle) => {
+      setSelectedVehicle(vehicle);
+      setIsDetailOpen(true);
+      setPassportData(null);
+      setLoadingPassport(true);
+      try {
+        const passport = await apiClient.getVehiclePassport(vehicle.id);
+        setPassportData(passport);
+      } catch {
+        setPassportData(null);
+      } finally {
+        setLoadingPassport(false);
+      }
+    },
+    [apiClient]
+  );
+
   // Initial load
   React.useEffect(() => {
     void fetchVehicles();
   }, [fetchVehicles]);
+
+  // Deep-link support for vehicle detail modal
+  React.useEffect(() => {
+    if (typeof window !== 'undefined' && vehicles.length > 0 && !selectedVehicle) {
+      const params = new URLSearchParams(window.location.search);
+      const vehicleParam = params.get('vehicleId');
+      if (vehicleParam) {
+        const found =
+          vehicleParam === 'first'
+            ? vehicles[0]
+            : vehicles.find((v) => v.id === vehicleParam || v.plate === vehicleParam);
+        if (found) {
+          void handleOpenDetail(found);
+        }
+      }
+    }
+  }, [vehicles, selectedVehicle, handleOpenDetail]);
 
   // Debounced Search
   React.useEffect(() => {
@@ -107,23 +137,6 @@ export function VehiclesView({ onQuickServiceForVehicle }: VehiclesViewProps) {
     }, 250);
     return () => clearTimeout(timer);
   }, [searchQuery, fetchVehicles]);
-
-  // Open Vehicle Detail
-  const handleOpenDetail = async (vehicle: Vehicle) => {
-    setSelectedVehicle(vehicle);
-    setIsDetailOpen(true);
-    setPassportData(null);
-    setLoadingPassport(true);
-    try {
-      const passport = await apiClient.getVehiclePassport(vehicle.id);
-      setPassportData(passport);
-    } catch {
-      // Passport may be empty or unavailable for newly registered vehicles
-      setPassportData(null);
-    } finally {
-      setLoadingPassport(false);
-    }
-  };
 
   // Submit Vehicle Registration
   const handleRegisterSubmit = async (e: React.FormEvent) => {
@@ -180,11 +193,11 @@ export function VehiclesView({ onQuickServiceForVehicle }: VehiclesViewProps) {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* PAGE HEADER */}
       <PageHeader
         title="Gestión de Vehículos & Flota"
-        subtitle="Padrón unificado de vehículos atendidos con validación de patentes, números de chasis (VIN) e historial de kilometraje certificado."
+        subtitle="Padrón oficial de vehículos atendidos con validación de patentes, números de chasis (VIN) y seguimiento de odómetro."
         actions={
           <div className="flex items-center gap-2">
             <Button
@@ -213,7 +226,7 @@ export function VehiclesView({ onQuickServiceForVehicle }: VehiclesViewProps) {
       />
 
       {/* SEARCH AND CONTROLS BAR */}
-      <Card className="bg-slate-900/80 border-slate-800 p-4">
+      <Card className="bg-slate-900/80 border-slate-800 p-3 sm:p-4">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
           {/* SEARCH INPUT */}
           <div className="relative flex-1">
@@ -227,27 +240,28 @@ export function VehiclesView({ onQuickServiceForVehicle }: VehiclesViewProps) {
                 searchQuery ? (
                   <button
                     onClick={() => setSearchQuery('')}
-                    className="text-slate-400 hover:text-slate-200"
+                    className="p-1 text-slate-400 hover:text-slate-200 transition-colors"
                     aria-label="Limpiar búsqueda"
                   >
                     <X className="h-4 w-4" />
                   </button>
                 ) : undefined
               }
-              className="bg-slate-950/80 border-slate-800 focus:border-emerald-500 text-sm"
+              className="bg-slate-950/80 border-slate-800 focus:border-emerald-500 text-sm min-h-[44px]"
             />
           </div>
 
           {/* VIEW SWITCHER & STATS */}
-          <div className="flex items-center justify-between sm:justify-end gap-3">
+          <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
             <span className="text-xs text-slate-400 font-medium">
-              <strong className="text-slate-100">{vehicles.length}</strong> {vehicles.length === 1 ? 'vehículo' : 'vehículos'}
+              <strong className="text-slate-100">{vehicles.length}</strong>{' '}
+              {vehicles.length === 1 ? 'vehículo' : 'vehículos'}
             </span>
 
             <div className="flex items-center bg-slate-950/80 rounded-lg p-1 border border-slate-800">
               <button
                 onClick={() => setViewMode('grid')}
-                className={`p-1.5 rounded-md transition-colors ${
+                className={`p-1.5 rounded-md transition-colors min-h-[32px] min-w-[32px] flex items-center justify-center ${
                   viewMode === 'grid'
                     ? 'bg-slate-800 text-emerald-400 shadow-sm'
                     : 'text-slate-400 hover:text-slate-200'
@@ -258,7 +272,7 @@ export function VehiclesView({ onQuickServiceForVehicle }: VehiclesViewProps) {
               </button>
               <button
                 onClick={() => setViewMode('table')}
-                className={`p-1.5 rounded-md transition-colors ${
+                className={`p-1.5 rounded-md transition-colors min-h-[32px] min-w-[32px] flex items-center justify-center ${
                   viewMode === 'table'
                     ? 'bg-slate-800 text-emerald-400 shadow-sm'
                     : 'text-slate-400 hover:text-slate-200'
@@ -306,18 +320,18 @@ export function VehiclesView({ onQuickServiceForVehicle }: VehiclesViewProps) {
           }
         />
       ) : viewMode === 'grid' ? (
-        /* GRID VIEW */
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        /* GRID VIEW (RESPONSIVE CARDS) */
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
           {vehicles.map((v) => (
-            <div key={v.id} onClick={() => handleOpenDetail(v)}>
+            <div key={v.id} onClick={() => handleOpenDetail(v)} className="cursor-pointer">
               <VehicleCard vehicle={v} />
             </div>
           ))}
         </div>
       ) : (
-        /* TABLE VIEW */
+        /* TABLE VIEW (RESPONSIVE WRAPPER) */
         <Card className="bg-slate-900/70 border-slate-800 overflow-hidden">
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto no-scrollbar">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -379,7 +393,7 @@ export function VehiclesView({ onQuickServiceForVehicle }: VehiclesViewProps) {
         </Card>
       )}
 
-      {/* MODAL: REGISTRAR NUEVO VEHÍCULO */}
+      {/* MODAL: REGISTRAR NUEVO VEHÍCULO (MOBILE-FIRST GROUPED FORM) */}
       <Dialog
         isOpen={isRegisterOpen}
         onClose={() => setIsRegisterOpen(false)}
@@ -387,7 +401,7 @@ export function VehiclesView({ onQuickServiceForVehicle }: VehiclesViewProps) {
         description="Ingresá los datos técnicos del vehículo para incorporarlo al registro oficial del taller."
         maxWidth="lg"
       >
-        <form onSubmit={handleRegisterSubmit} className="space-y-4">
+        <form onSubmit={handleRegisterSubmit} className="space-y-5">
           {registerError && (
             <div
               role="alert"
@@ -408,92 +422,113 @@ export function VehiclesView({ onQuickServiceForVehicle }: VehiclesViewProps) {
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Input
-              label="Marca *"
-              required
-              placeholder="ej. Volkswagen"
-              value={formMake}
-              onChange={(e) => setFormMake(e.target.value)}
-              disabled={isSubmitting}
-            />
-
-            <Input
-              label="Modelo *"
-              required
-              placeholder="ej. Golf GTI MK7.5"
-              value={formModel}
-              onChange={(e) => setFormModel(e.target.value)}
-              disabled={isSubmitting}
-            />
-
-            <Input
-              label="Año de Fabricación *"
-              type="number"
-              required
-              min={1950}
-              max={2030}
-              value={formYear}
-              onChange={(e) => setFormYear(Number(e.target.value))}
-              disabled={isSubmitting}
-            />
-
-            <Input
-              label="Kilometraje Actual (km) *"
-              type="number"
-              required
-              min={0}
-              placeholder="ej. 45000"
-              value={formMileage}
-              onChange={(e) => setFormMileage(e.target.value === '' ? '' : Number(e.target.value))}
-              disabled={isSubmitting}
-            />
-
-            <Input
-              label="Patente / Dominio"
-              placeholder="ej. AF123CD"
-              value={formPlate}
-              onChange={(e) => setFormPlate(e.target.value.toUpperCase())}
-              hint="Formato Mercosur o anterior"
-              disabled={isSubmitting}
-            />
-
-            <Input
-              label="Número de Chasis (VIN)"
-              placeholder="ej. WVWZZZAUZMP999999"
-              value={formVin}
-              onChange={(e) => setFormVin(e.target.value.toUpperCase())}
-              hint="17 caracteres alfanuméricos"
-              disabled={isSubmitting}
-            />
-
-            <Input
-              label="Motorización"
-              placeholder="ej. 2.0 TSI 230 CV (EA888)"
-              value={formEngine}
-              onChange={(e) => setFormEngine(e.target.value)}
-              disabled={isSubmitting}
-            />
-
-            <Select
-              label="Tipo de Combustible"
-              value={formFuelType}
-              onChange={(e) => setFormFuelType(e.target.value)}
-              disabled={isSubmitting}
-              options={[
-                { value: 'Nafta', label: 'Nafta (Super / Premium)' },
-                { value: 'Diesel', label: 'Diesel / Gasoil' },
-                { value: 'Híbrido', label: 'Híbrido (HEV / PHEV)' },
-                { value: 'Eléctrico', label: '100% Eléctrico (BEV)' },
-                { value: 'GNC', label: 'GNC / Bi-combustible' },
-              ]}
-            />
+          {/* GROUP 1: IDENTIFICACIÓN PRINCIPAL */}
+          <div className="space-y-3">
+            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
+              1. Datos del Vehículo
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <Input
+                label="Marca *"
+                required
+                placeholder="ej. Volkswagen"
+                value={formMake}
+                onChange={(e) => setFormMake(e.target.value)}
+                disabled={isSubmitting}
+              />
+              <Input
+                label="Modelo *"
+                required
+                placeholder="ej. Golf VII 1.4 TSI"
+                value={formModel}
+                onChange={(e) => setFormModel(e.target.value)}
+                disabled={isSubmitting}
+              />
+              <Input
+                label="Año de Fabricación *"
+                type="number"
+                inputMode="numeric"
+                required
+                min={1950}
+                max={2030}
+                value={formYear}
+                onChange={(e) => setFormYear(Number(e.target.value))}
+                disabled={isSubmitting}
+              />
+            </div>
           </div>
 
-          <div className="pt-4 border-t border-slate-800 flex items-center justify-end gap-3">
+          {/* GROUP 2: IDENTIFICACIÓN REGISTRAL */}
+          <div className="space-y-3 pt-2 border-t border-slate-800">
+            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
+              2. Identificación Registral
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Input
+                label="Patente / Dominio"
+                placeholder="ej. AF123CD"
+                value={formPlate}
+                onChange={(e) => setFormPlate(e.target.value.toUpperCase())}
+                hint="Formato Mercosur o alfanumérico"
+                disabled={isSubmitting}
+              />
+              <Input
+                label="Número de Chasis (VIN)"
+                placeholder="ej. WVWZZZAUZKP100001"
+                value={formVin}
+                onChange={(e) => setFormVin(e.target.value.toUpperCase())}
+                hint="17 caracteres alfanuméricos"
+                disabled={isSubmitting}
+              />
+            </div>
+          </div>
+
+          {/* GROUP 3: MECÁNICA & ODÓMETRO */}
+          <div className="space-y-3 pt-2 border-t border-slate-800">
+            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
+              3. Mecánica & Odómetro
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <Input
+                label="Kilometraje Actual (km) *"
+                type="number"
+                inputMode="numeric"
+                required
+                min={0}
+                placeholder="ej. 58400"
+                value={formMileage}
+                onChange={(e) => setFormMileage(e.target.value === '' ? '' : Number(e.target.value))}
+                disabled={isSubmitting}
+              />
+              <Input
+                label="Motorización"
+                placeholder="ej. 1.4 TSI 150 CV"
+                value={formEngine}
+                onChange={(e) => setFormEngine(e.target.value)}
+                disabled={isSubmitting}
+              />
+              <Select
+                label="Tipo de Combustible"
+                value={formFuelType}
+                onChange={(e) => setFormFuelType(e.target.value)}
+                disabled={isSubmitting}
+                options={[
+                  { value: 'Nafta', label: 'Nafta (Super / Premium)' },
+                  { value: 'Diesel', label: 'Diesel / Gasoil' },
+                  { value: 'Híbrido', label: 'Híbrido (HEV / PHEV)' },
+                  { value: 'Eléctrico', label: '100% Eléctrico (BEV)' },
+                  { value: 'GNC', label: 'GNC / Bi-combustible' },
+                ]}
+              />
+            </div>
+          </div>
+
+          {/* FORM ACTIONS */}
+          <div className="pt-4 border-t border-slate-800 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2.5">
             <Button
               type="button"
               variant="ghost"
+              size="md"
               onClick={() => setIsRegisterOpen(false)}
               disabled={isSubmitting}
             >
@@ -502,6 +537,7 @@ export function VehiclesView({ onQuickServiceForVehicle }: VehiclesViewProps) {
             <Button
               type="submit"
               variant="primary"
+              size="md"
               isLoading={isSubmitting}
               leftIcon={<Plus className="h-4 w-4" />}
             >
@@ -511,165 +547,15 @@ export function VehiclesView({ onQuickServiceForVehicle }: VehiclesViewProps) {
         </form>
       </Dialog>
 
-      {/* DRAWER / SHEET: FICHA TÉCNICA DEL VEHÍCULO */}
-      <Sheet
+      {/* MODAL: FICHA TÉCNICA Y DETALLES DEL VEHÍCULO */}
+      <VehicleDetailModal
         isOpen={isDetailOpen}
         onClose={() => setIsDetailOpen(false)}
-        title={selectedVehicle ? `${selectedVehicle.make} ${selectedVehicle.model}` : 'Ficha Técnica'}
-        description="Especificaciones del rodado e historial de mantenimiento oficial"
-      >
-        {selectedVehicle && (
-          <div className="space-y-6 pt-2">
-            {/* BADGES & ODOMETER SUMMARY */}
-            <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800 space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] text-slate-500 uppercase tracking-wider block font-semibold">
-                    Dominio Oficial
-                  </span>
-                  {selectedVehicle.plate ? (
-                    <span className="inline-block mt-1 font-mono font-bold text-sm px-3 py-1 rounded bg-black text-slate-100 border border-slate-700 tracking-widest shadow">
-                      {selectedVehicle.plate}
-                    </span>
-                  ) : (
-                    <span className="text-slate-500 text-xs italic">Sin chapa registrada</span>
-                  )}
-                </div>
-                <div className="text-right">
-                  <span className="text-[10px] text-slate-500 uppercase tracking-wider block font-semibold">
-                    Kilometraje Registrado
-                  </span>
-                  <span className="text-lg font-bold text-emerald-400">
-                    {selectedVehicle.currentMileage.toLocaleString()} km
-                  </span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800/80 text-xs">
-                <div>
-                  <span className="text-slate-400">Año de Modelo:</span>{' '}
-                  <strong className="text-slate-200">{selectedVehicle.year}</strong>
-                </div>
-                <div>
-                  <span className="text-slate-400">Combustible:</span>{' '}
-                  <strong className="text-slate-200">{selectedVehicle.fuelType || 'Nafta'}</strong>
-                </div>
-              </div>
-            </div>
-
-            {/* TECHNICAL DETAILS */}
-            <div className="space-y-2">
-              <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Datos de Chasis & Motor
-              </h3>
-              <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-2.5 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400 flex items-center gap-1.5">
-                    <ShieldCheck className="h-3.5 w-3.5 text-slate-500" />
-                    Número VIN / Chasis:
-                  </span>
-                  <span className="font-mono text-slate-200">
-                    {selectedVehicle.vin || 'No informado'}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400 flex items-center gap-1.5">
-                    <Cpu className="h-3.5 w-3.5 text-slate-500" />
-                    Motorización:
-                  </span>
-                  <span className="text-slate-200">{selectedVehicle.engine || 'Estándar OEM'}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400 flex items-center gap-1.5">
-                    <Calendar className="h-3.5 w-3.5 text-slate-500" />
-                    Identificador Interno:
-                  </span>
-                  <span className="font-mono text-[11px] text-slate-400 truncate max-w-[180px]">
-                    {selectedVehicle.id}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* TIMELINE / PASSPORT PREVIEW */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                  Historial Certificado
-                </h3>
-                {passportData?.timeline?.length > 0 && (
-                  <Badge variant="success" size="sm">
-                    {passportData.timeline.length} intervenciones
-                  </Badge>
-                )}
-              </div>
-
-              {loadingPassport ? (
-                <div className="p-4 text-center text-xs text-slate-400">
-                  <RotateCw className="h-4 w-4 animate-spin mx-auto mb-1 text-emerald-400" />
-                  Recuperando libro digital...
-                </div>
-              ) : passportData?.timeline?.length > 0 ? (
-                <div className="space-y-2 max-h-48 overflow-y-auto no-scrollbar">
-                  {passportData.timeline.map((entry: any, idx: number) => (
-                    <div
-                      key={entry.recordId || idx}
-                      className="p-3 rounded-lg bg-slate-950/60 border border-slate-800 text-xs space-y-1"
-                    >
-                      <div className="flex items-center justify-between font-medium">
-                        <span className="text-slate-200">{entry.category || 'Mantenimiento'}</span>
-                        <span className="text-emerald-400 font-mono">
-                          {entry.serviceMileage ? `${entry.serviceMileage.toLocaleString()} km` : ''}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-400">{entry.description}</p>
-                      <div className="text-[10px] text-slate-500 flex items-center justify-between pt-1">
-                        <span>{entry.performedAt ? new Date(entry.performedAt).toLocaleDateString() : ''}</span>
-                        {entry.isCertified && (
-                          <span className="text-emerald-400 font-medium flex items-center gap-1">
-                            <ShieldCheck className="h-3 w-3" /> Certificado
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="p-4 rounded-xl bg-slate-950/40 border border-slate-800/80 text-center text-xs text-slate-400">
-                  <FileText className="h-5 w-5 text-slate-600 mx-auto mb-1" />
-                  No registra intervenciones previas en este taller.
-                </div>
-              )}
-            </div>
-
-            {/* ACTION BUTTONS */}
-            <div className="pt-4 border-t border-slate-800 space-y-2">
-              {onQuickServiceForVehicle && (
-                <Button
-                  variant="primary"
-                  size="md"
-                  fullWidth
-                  leftIcon={<Zap className="h-4 w-4" />}
-                  onClick={() => {
-                    setIsDetailOpen(false);
-                    onQuickServiceForVehicle(selectedVehicle);
-                  }}
-                >
-                  Iniciar Quick Service Express
-                </Button>
-              )}
-              <Button
-                variant="outline"
-                size="md"
-                fullWidth
-                onClick={() => setIsDetailOpen(false)}
-              >
-                Cerrar Ficha
-              </Button>
-            </div>
-          </div>
-        )}
-      </Sheet>
+        vehicle={selectedVehicle}
+        passportData={passportData}
+        isLoadingPassport={loadingPassport}
+        onQuickServiceForVehicle={onQuickServiceForVehicle}
+      />
     </div>
   );
 }

@@ -16,7 +16,8 @@ param(
     [int]$Port = 4000,
     [string]$HostAddress = "127.0.0.1",
     [switch]$NoBrowser,
-    [switch]$Foreground
+    [switch]$Foreground,
+    [int]$TimeoutSec = 35
 )
 
 $ErrorActionPreference = "Stop"

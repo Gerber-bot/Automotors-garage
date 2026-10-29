@@ -4,13 +4,13 @@ import * as React from 'react';
 import {
   Wrench,
   Car,
-  ShieldCheck,
   Clock,
   Zap,
-  Sparkles,
-  ChevronRight,
-  ExternalLink,
   RotateCw,
+  Plus,
+  ArrowRight,
+  CheckCircle2,
+  Activity,
 } from 'lucide-react';
 import {
   Button,
@@ -22,8 +22,6 @@ import {
   TableRow,
   TableHead,
   TableCell,
-  PageHeader,
-  SectionHeader,
   LoadingState,
 } from '../ui/index.ts';
 import { ApiClient } from '../../api/client.ts';
@@ -33,12 +31,14 @@ export interface DashboardViewProps {
   onQuickServiceClick?: () => void;
   onVehicleClick?: (vehicleId?: string) => void;
   onViewAllOrders?: () => void;
+  onDiagnosticsClick?: () => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
   onQuickServiceClick,
   onVehicleClick,
   onViewAllOrders,
+  onDiagnosticsClick,
 }) => {
   const [vehicles, setVehicles] = React.useState<readonly Vehicle[]>([]);
   const [workOrders, setWorkOrders] = React.useState<readonly WorkOrder[]>([]);
@@ -58,7 +58,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       setVehicles(vehs);
       setWorkOrders(orders);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Error al sincronizar métricas del taller');
+      setError(err instanceof Error ? err.message : 'Error al sincronizar datos del taller');
     } finally {
       setIsLoading(false);
     }
@@ -68,240 +68,269 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     void loadDashboardData();
   }, [loadDashboardData]);
 
-  const activeOrdersCount = workOrders.filter(
-    (o) => o.status !== 'COMPLETED' && o.status !== 'CANCELLED'
-  ).length;
+  // Derived metrics
+  const activeOrders = React.useMemo(
+    () => workOrders.filter((o) => o.status !== 'COMPLETED' && o.status !== 'CANCELLED'),
+    [workOrders]
+  );
 
-  const completedOrdersCount = workOrders.filter(
-    (o) => o.status === 'COMPLETED'
-  ).length;
+  const completedOrders = React.useMemo(
+    () => workOrders.filter((o) => o.status === 'COMPLETED'),
+    [workOrders]
+  );
 
-  const spotlightVehicle = vehicles[0] || null;
+  // Calculate upcoming maintenance items from registered vehicles
+  const upcomingMaintenance = React.useMemo(() => {
+    return vehicles.slice(0, 3).map((v) => {
+      const intervalKm = 10000;
+      const nextTargetKm = Math.ceil((v.currentMileage + 1) / intervalKm) * intervalKm;
+      const remainingKm = Math.max(0, nextTargetKm - v.currentMileage);
+      const isUrgent = remainingKm <= 2000;
 
-  const kpis = [
-    {
-      id: 'kpi-vehicles',
-      title: 'Flota en Taller',
-      value: String(vehicles.length),
-      subtext: vehicles.length > 0 ? `${vehicles.length} unidades registradas` : 'Sin unidades registradas',
-      trend: 'API Real',
-      icon: <Car className="h-5 w-5 text-emerald-400" />,
-      badgeVariant: 'success' as const,
-    },
-    {
-      id: 'kpi-orders',
-      title: 'Órdenes en Proceso',
-      value: String(activeOrdersCount),
-      subtext: activeOrdersCount > 0 ? `${activeOrdersCount} órdenes activas` : 'Sin órdenes activas',
-      trend: 'API Real',
-      icon: <Wrench className="h-5 w-5 text-sky-400" />,
-      badgeVariant: 'info' as const,
-    },
-    {
-      id: 'kpi-completed',
-      title: 'Servicios Cerrados',
-      value: String(completedOrdersCount),
-      subtext: `${completedOrdersCount} servicios auditados`,
-      trend: 'Certificado',
-      icon: <ShieldCheck className="h-5 w-5 text-emerald-400" />,
-      badgeVariant: 'success' as const,
-    },
-    {
-      id: 'kpi-oem',
-      title: 'Alertas OEM',
-      value: '2',
-      subtext: 'Proyección preventiva',
-      trend: 'Estimado',
-      icon: <Clock className="h-5 w-5 text-amber-400" />,
-      badgeVariant: 'warning' as const,
-    },
-  ];
+      return {
+        vehicle: v,
+        targetKm: nextTargetKm,
+        remainingKm,
+        isUrgent,
+        recommendedAction: isUrgent
+          ? 'Service Completo: Aceite, Filtros e Inspección General'
+          : 'Inspección periódica y verificación de fluidos',
+      };
+    });
+  }, [vehicles]);
 
   return (
-    <div className="space-y-6">
-      {/* REAL API STATUS BANNER */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-xl bg-slate-900 border border-slate-800 text-xs gap-2">
-        <div className="flex items-center gap-2 text-slate-300">
+    <div className="space-y-5">
+      {/* ACTION & STATUS TOP BAR */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-slate-900 border border-slate-800">
+        <div className="flex items-center gap-2.5">
           <Badge variant="success" size="sm" dot>
-            API Conectada
+            Taller Operativo
           </Badge>
-          <span className="text-slate-300 font-medium">
-            Sincronizado con API REST en puerto 4000 & Motor Relacional PostgreSQL.
+          <span className="text-xs text-slate-300 font-medium">
+            {vehicles.length} {vehicles.length === 1 ? 'unidad' : 'unidades'} • {activeOrders.length}{' '}
+            {activeOrders.length === 1 ? 'orden activa' : 'órdenes activas'}
           </span>
         </div>
-        <div className="flex items-center gap-3">
+
+        <div className="flex items-center gap-2 self-end sm:self-auto">
           <button
             onClick={() => loadDashboardData()}
-            className="text-[11px] font-mono text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-colors"
+            title="Actualizar datos"
+            aria-label="Actualizar datos"
+            className="p-2 rounded-lg text-slate-400 hover:text-emerald-400 hover:bg-slate-800/80 transition-colors cursor-pointer"
           >
-            <RotateCw className={`h-3 w-3 ${isLoading ? 'animate-spin' : ''}`} />
-            Sincronizar
+            <RotateCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
           </button>
+          <Button
+            variant="outline"
+            size="sm"
+            leftIcon={<Activity className="h-4 w-4 text-emerald-400" />}
+            onClick={() => onDiagnosticsClick?.()}
+          >
+            Diagnóstico OBD
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            leftIcon={<Car className="h-4 w-4 text-emerald-400" />}
+            onClick={() => onVehicleClick?.()}
+          >
+            Vehículos
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            leftIcon={<Zap className="h-4 w-4 stroke-[2.5]" />}
+            onClick={onQuickServiceClick}
+          >
+            Servicio Express
+          </Button>
         </div>
       </div>
 
       {error && (
-        <div role="alert" className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
-          {error}
+        <div
+          role="alert"
+          className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between gap-2"
+        >
+          <span>{error}</span>
+          <Button variant="ghost" size="sm" onClick={() => loadDashboardData()}>
+            Reintentar
+          </Button>
         </div>
       )}
 
-      {/* PAGE HEADER */}
-      <PageHeader
-        title="Panel de Control Operativo"
-        subtitle="Monitoreo centralizado de flota atendida, órdenes de trabajo y mantenimiento inteligente."
-        actions={
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="md"
-              leftIcon={<Car className="h-4 w-4 text-emerald-400" />}
-              onClick={() => onVehicleClick?.()}
-            >
-              Ver Vehículos
-            </Button>
-            <Button
-              variant="primary"
-              size="md"
-              leftIcon={<Zap className="h-4 w-4 stroke-[2.5]" />}
-              onClick={onQuickServiceClick}
-            >
-              Quick Service &lt;60s
-            </Button>
+      {/* KPI METRIC CARDS (COMPACT & RESPONSIVE) */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* FLOTA */}
+        <Card variant="default" className="p-3.5 sm:p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
+              Flota Registrada
+            </span>
+            <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400">
+              <Car className="h-4 w-4" />
+            </div>
           </div>
-        }
-      />
-
-      {/* KPI CARDS GRID */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {kpis.map((kpi) => (
-          <Card key={kpi.id} variant="default" className="relative overflow-hidden p-5">
-            <div className="flex items-start justify-between">
-              <div>
-                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1">
-                  {kpi.title}
-                </span>
-                <span className="text-2xl font-bold tracking-tight text-white block">
-                  {kpi.value}
-                </span>
-              </div>
-              <div className="p-2.5 rounded-xl bg-slate-800 border border-slate-700/60">
-                {kpi.icon}
-              </div>
-            </div>
-            <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs">
-              <span className="text-slate-400 truncate max-w-[140px]">{kpi.subtext}</span>
-              <Badge variant={kpi.badgeVariant} size="sm">
-                {kpi.trend}
-              </Badge>
-            </div>
-          </Card>
-        ))}
-      </div>
-
-      {/* FEATURED SPOTLIGHT CARD (FROM REAL VEHICLES) */}
-      {spotlightVehicle && (
-        <Card variant="elevated" className="border-emerald-500/30 relative overflow-hidden p-6">
-          <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <Badge variant="default" size="sm">
-                  Vehículo Destacado
-                </Badge>
-                {spotlightVehicle.plate && (
-                  <span className="font-mono font-bold text-xs px-2.5 py-0.5 rounded bg-black border border-slate-700 text-slate-100 tracking-wider">
-                    {spotlightVehicle.plate}
-                  </span>
-                )}
-                {spotlightVehicle.vin && (
-                  <span className="font-mono text-xs text-slate-400 hidden sm:inline">
-                    VIN: {spotlightVehicle.vin}
-                  </span>
-                )}
-              </div>
-              <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight">
-                {spotlightVehicle.make} {spotlightVehicle.model} ({spotlightVehicle.year})
-              </h2>
-              <p className="text-xs sm:text-sm text-slate-300 max-w-2xl">
-                Unidad registrada en el padrón del taller con historial de intervenciones y seguimiento de odómetro.
-                {spotlightVehicle.engine ? ` Motorización: ${spotlightVehicle.engine}.` : ''}
-              </p>
-              <div className="flex items-center gap-4 pt-1 text-xs text-slate-400 font-mono">
-                <span>Odómetro actual: {spotlightVehicle.currentMileage.toLocaleString()} km</span>
-                <span>•</span>
-                <span className="text-emerald-400 font-semibold">Listo para recepción o servicio</span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3 shrink-0 flex-wrap">
-              <Button
-                variant="outline"
-                size="md"
-                leftIcon={<ExternalLink className="h-4 w-4" />}
-                onClick={() => onVehicleClick?.(spotlightVehicle.id)}
-              >
-                Ficha Técnica
-              </Button>
-              <Button
-                variant="primary"
-                size="md"
-                leftIcon={<Wrench className="h-4 w-4" />}
-                onClick={onQuickServiceClick}
-              >
-                Servicio Express
-              </Button>
-            </div>
+          <div className="mt-2 flex items-baseline justify-between">
+            <span className="text-xl sm:text-2xl font-bold text-white tracking-tight">
+              {vehicles.length}
+            </span>
+            <span className="text-[10px] text-slate-400">unidades</span>
           </div>
         </Card>
-      )}
 
-      {/* TWO COLUMN LAYOUT: WORK ORDERS & OEM ALERTS */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* RECENT WORK ORDERS (2 COLUMNS) */}
-        <div className="lg:col-span-2 space-y-4">
-          <SectionHeader
-            title="Órdenes de Trabajo del Taller"
-            description="Intervenciones registradas en el backend activo"
-            actions={
-              <Button
-                variant="ghost"
-                size="sm"
-                rightIcon={<ChevronRight className="h-4 w-4" />}
-                onClick={onViewAllOrders}
-              >
-                Ver todas ({workOrders.length})
-              </Button>
-            }
-          />
+        {/* ÓRDENES ACTIVAS */}
+        <Card variant="default" className="p-3.5 sm:p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
+              En Proceso
+            </span>
+            <div className="p-1.5 rounded-lg bg-sky-500/10 text-sky-400">
+              <Wrench className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="mt-2 flex items-baseline justify-between">
+            <span className="text-xl sm:text-2xl font-bold text-white tracking-tight">
+              {activeOrders.length}
+            </span>
+            <span className="text-[10px] text-sky-400 font-medium">activas</span>
+          </div>
+        </Card>
 
-          {isLoading && workOrders.length === 0 ? (
+        {/* SERVICIOS COMPLETADOS */}
+        <Card variant="default" className="p-3.5 sm:p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
+              Completados
+            </span>
+            <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400">
+              <CheckCircle2 className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="mt-2 flex items-baseline justify-between">
+            <span className="text-xl sm:text-2xl font-bold text-white tracking-tight">
+              {completedOrders.length}
+            </span>
+            <span className="text-[10px] text-slate-400">servicios</span>
+          </div>
+        </Card>
+
+        {/* PRÓXIMOS SERVICIOS */}
+        <Card variant="default" className="p-3.5 sm:p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
+              Alertas OEM
+            </span>
+            <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-400">
+              <Clock className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="mt-2 flex items-baseline justify-between">
+            <span className="text-xl sm:text-2xl font-bold text-white tracking-tight">
+              {upcomingMaintenance.filter((m) => m.isUrgent).length}
+            </span>
+            <span className="text-[10px] text-amber-400 font-medium">próximos</span>
+          </div>
+        </Card>
+      </div>
+
+      {/* ACTIVE WORK ORDERS SECTION */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-sm sm:text-base font-bold text-white tracking-tight">
+              Órdenes de Trabajo en el Taller
+            </h2>
+            <p className="text-xs text-slate-400">
+              Intervenciones activas y servicios en proceso
+            </p>
+          </div>
+          {workOrders.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              rightIcon={<ArrowRight className="h-3.5 w-3.5" />}
+              onClick={onViewAllOrders}
+            >
+              Ver todas ({workOrders.length})
+            </Button>
+          )}
+        </div>
+
+        {isLoading && workOrders.length === 0 ? (
+          <div className="p-6 text-center">
             <LoadingState label="Cargando órdenes operativas..." />
-          ) : workOrders.length === 0 ? (
-            <Card className="p-8 text-center bg-slate-900/60 border-slate-800 space-y-3">
-              <Wrench className="h-8 w-8 text-slate-500 mx-auto" />
-              <h4 className="text-sm font-semibold text-slate-200">
+          </div>
+        ) : workOrders.length === 0 ? (
+          <Card className="p-6 text-center bg-slate-900/60 border-slate-800 space-y-3">
+            <Wrench className="h-8 w-8 text-slate-500 mx-auto" />
+            <div className="space-y-1">
+              <h3 className="text-sm font-semibold text-slate-200">
                 No hay órdenes de trabajo abiertas en este taller
-              </h4>
-              <p className="text-xs text-slate-400 max-w-md mx-auto">
-                Podés iniciar un servicio express en menos de 60 segundos con Quick Service.
+              </h3>
+              <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                Registrá una nueva intervención express en menos de 60 segundos con Quick Service.
               </p>
-              <Button
-                variant="primary"
-                size="sm"
-                leftIcon={<Zap className="h-4 w-4" />}
-                onClick={onQuickServiceClick}
-              >
-                Crear Primera Orden
-              </Button>
-            </Card>
-          ) : (
-            <div className="rounded-xl border border-slate-800 overflow-hidden bg-slate-900/70">
+            </div>
+            <Button
+              variant="primary"
+              size="sm"
+              leftIcon={<Zap className="h-4 w-4" />}
+              onClick={onQuickServiceClick}
+            >
+              Iniciar Primera Orden
+            </Button>
+          </Card>
+        ) : (
+          <>
+            {/* MOBILE VIEW: COMPACT TOUCH CARDS */}
+            <div className="md:hidden space-y-2.5">
+              {workOrders.slice(0, 4).map((order) => (
+                <div
+                  key={order.id}
+                  onClick={onViewAllOrders}
+                  className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 active:bg-slate-850 transition-colors space-y-2 cursor-pointer"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-xs font-semibold text-emerald-400">
+                      #{order.id.slice(0, 8)}
+                    </span>
+                    <Badge
+                      variant={
+                        order.status === 'COMPLETED'
+                          ? 'success'
+                          : order.status === 'IN_PROGRESS'
+                          ? 'info'
+                          : order.status === 'CANCELLED'
+                          ? 'danger'
+                          : 'warning'
+                      }
+                      size="sm"
+                      dot
+                    >
+                      {order.status}
+                    </Badge>
+                  </div>
+                  <div className="text-xs text-slate-200 font-medium">
+                    {order.reportedIssue || 'Mantenimiento Preventivo'}
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono pt-1 border-t border-slate-800/80">
+                    <span>{order.reportedMileage.toLocaleString()} km</span>
+                    <span className="text-slate-400">{order.workshopName || 'Taller'}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* DESKTOP VIEW: CLEAN STRUCTURED TABLE */}
+            <div className="hidden md:block rounded-xl border border-slate-800 overflow-hidden bg-slate-900/70">
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Orden</TableHead>
-                    <TableHead>Problema / Intervención</TableHead>
+                    <TableHead>Intervención / Problema</TableHead>
                     <TableHead>Kilometraje</TableHead>
                     <TableHead>Estado</TableHead>
                   </TableRow>
@@ -310,22 +339,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   {workOrders.slice(0, 5).map((order) => (
                     <TableRow key={order.id}>
                       <TableCell>
-                        <div className="space-y-0.5">
-                          <span className="font-mono font-semibold text-emerald-400 block text-xs truncate max-w-[120px]">
-                            {order.id.slice(0, 8)}...
-                          </span>
-                          <span className="text-[11px] text-slate-400 block">
-                            {order.workshopName || 'Taller Activo'}
-                          </span>
-                        </div>
+                        <span className="font-mono font-semibold text-emerald-400 block text-xs">
+                          #{order.id.slice(0, 8)}
+                        </span>
+                        <span className="text-[11px] text-slate-400 block">
+                          {order.workshopName || 'Taller Activo'}
+                        </span>
                       </TableCell>
                       <TableCell>
-                        <span className="text-slate-200 block text-xs font-medium truncate max-w-[200px]">
+                        <span className="text-slate-200 block text-xs font-medium truncate max-w-xs">
                           {order.reportedIssue || 'Mantenimiento Preventivo'}
                         </span>
                         {order.interventions && order.interventions.length > 0 && (
                           <span className="text-[11px] text-slate-400 block">
-                            {order.interventions.length} items asignados
+                            {order.interventions.length}{' '}
+                            {order.interventions.length === 1 ? 'ítem' : 'ítems'}
                           </span>
                         )}
                       </TableCell>
@@ -354,69 +382,120 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </TableBody>
               </Table>
             </div>
+          </>
+        )}
+      </div>
+
+      {/* TWO-COLUMN GRID: RECENT VEHICLES & PREVENTIVE MAINTENANCE */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* RECENT VEHICLES */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-white tracking-tight">
+              Vehículos en el Taller
+            </h3>
+            {vehicles.length > 0 && (
+              <button
+                onClick={() => onVehicleClick?.()}
+                className="text-xs text-emerald-400 hover:underline font-medium"
+              >
+                Ver flota completa
+              </button>
+            )}
+          </div>
+
+          {vehicles.length === 0 ? (
+            <Card className="p-5 text-center bg-slate-900/60 border-slate-800 space-y-2">
+              <Car className="h-6 w-6 text-slate-500 mx-auto" />
+              <p className="text-xs text-slate-300">Sin vehículos en el padrón</p>
+              <Button
+                variant="outline"
+                size="sm"
+                leftIcon={<Plus className="h-3.5 w-3.5" />}
+                onClick={() => onVehicleClick?.()}
+              >
+                Registrar Unidad
+              </Button>
+            </Card>
+          ) : (
+            <div className="space-y-2">
+              {vehicles.slice(0, 3).map((v) => (
+                <div
+                  key={v.id}
+                  onClick={() => onVehicleClick?.(v.id)}
+                  className="p-3 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 transition-colors flex items-center justify-between gap-2 cursor-pointer"
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs font-bold text-white bg-black px-2 py-0.5 rounded border border-slate-800 shrink-0">
+                        {v.plate || 'S/D'}
+                      </span>
+                      <span className="text-xs font-semibold text-slate-100 truncate">
+                        {v.make} {v.model}
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-slate-400 font-mono block mt-1">
+                      {v.year} • {v.currentMileage.toLocaleString()} km
+                    </span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onQuickServiceClick?.();
+                    }}
+                  >
+                    Servicio
+                  </Button>
+                </div>
+              ))}
+            </div>
           )}
         </div>
 
-        {/* OEM PREVENTIVE SERVICE COLUMN (1 COLUMN) */}
-        <div className="space-y-4">
-          <SectionHeader
-            title="Mantenimiento OEM"
-            description="Reglas preventivas por catálogo"
-            actions={
-              <Badge variant="warning" size="sm" dot>
-                OEM Activo
-              </Badge>
-            }
-          />
-
-          <div className="space-y-3">
-            <Card variant="default" className="p-4 space-y-2.5">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <span className="text-xs font-semibold text-slate-100 block">
-                    Volkswagen Golf VII 1.4 TSI
-                  </span>
-                  <span className="font-mono text-[11px] text-slate-400 block">
-                    AE123CD • 58.400 km
-                  </span>
-                </div>
-                <Badge variant="warning" size="sm">
-                  Próximo
-                </Badge>
-              </div>
-
-              <div className="text-xs text-slate-300 bg-slate-950/70 p-2.5 rounded-lg border border-slate-800">
-                <span className="text-slate-400 block text-[10px] uppercase font-semibold">
-                  Plan Oficial OEM (60.000 km):
-                </span>
-                <span>Cambio de Aceite Sintético VW 502.00, Filtro de Polen y Bujías</span>
-              </div>
-
-              <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
-                <span>Faltan: 1.600 km</span>
-                <span className="text-emerald-400 font-medium">Intervalo 12 meses</span>
-              </div>
-            </Card>
-
-            <Card variant="bordered" className="p-4 text-center">
-              <Sparkles className="h-5 w-5 text-emerald-400 mx-auto mb-2" />
-              <h4 className="text-xs font-semibold text-slate-100 mb-1">
-                Cálculo Determinista
-              </h4>
-              <p className="text-[11px] text-slate-400 leading-relaxed mb-3">
-                Calcula automáticamente la próxima intervención según tablas oficiales OEM por kilometraje y
-                meses transcurridos sin margen para alucinaciones.
-              </p>
-              <Button
-                variant="subtle"
-                size="sm"
-                className="w-full"
-                onClick={onQuickServiceClick}
-              >
-                Aplicar Regla a Servicio
-              </Button>
-            </Card>
+        {/* UPCOMING OEM MAINTENANCE */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-white tracking-tight">
+              Próximos Mantenimientos Preventivos
+            </h3>
+            <Badge variant="warning" size="sm">
+              Intervalos OEM
+            </Badge>
           </div>
+
+          {upcomingMaintenance.length === 0 ? (
+            <Card className="p-5 text-center bg-slate-900/60 border-slate-800 space-y-2">
+              <Clock className="h-6 w-6 text-slate-500 mx-auto" />
+              <p className="text-xs text-slate-300">Sin mantenimientos proyectados</p>
+            </Card>
+          ) : (
+            <div className="space-y-2">
+              {upcomingMaintenance.map((m) => (
+                <div
+                  key={m.vehicle.id}
+                  className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1.5"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-semibold text-slate-200 truncate">
+                      {m.vehicle.make} {m.vehicle.model} ({m.vehicle.plate || 'S/P'})
+                    </span>
+                    <Badge variant={m.isUrgent ? 'warning' : 'secondary'} size="sm">
+                      {m.isUrgent ? 'Próximo' : 'En regla'}
+                    </Badge>
+                  </div>
+                  <p className="text-[11px] text-slate-400">{m.recommendedAction}</p>
+                  <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono pt-1 border-t border-slate-800/80">
+                    <span>Objetivo: {m.targetKm.toLocaleString()} km</span>
+                    <span className={m.isUrgent ? 'text-amber-400 font-semibold' : 'text-emerald-400'}>
+                      Faltan: {m.remainingKm.toLocaleString()} km
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
