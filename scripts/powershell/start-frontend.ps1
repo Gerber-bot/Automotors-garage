@@ -22,6 +22,7 @@ param(
     [string]$HostAddress = "127.0.0.1",
     [switch]$Foreground,
     [switch]$NoBrowser,
+    [switch]$Clean,
     [int]$TimeoutSec = 30
 )
 
@@ -72,7 +73,7 @@ if (Test-Path $pidFile) {
 }
 
 # 2. Comprobar si el puerto ya esta en uso
-$portConn = Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue
+$portConn = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
 if ($portConn) {
     $owningPid = $portConn[0].OwningProcess
     $owningProc = Get-Process -Id $owningPid -ErrorAction SilentlyContinue
@@ -98,6 +99,15 @@ foreach ($f in $folders) {
     $fp = Join-Path $repoRoot $f
     if (-not (Test-Path $fp)) {
         New-Item -ItemType Directory -Path $fp -Force | Out-Null
+    }
+}
+
+# Limpieza controlada opcional unicamente si el operador pasa -Clean explicitamente
+if ($Clean) {
+    $devCacheDir = Join-Path $frontendDir ".next-dev"
+    if (Test-Path $devCacheDir) {
+        Write-Host "  [INFO] Limpiando cache de desarrollo ($devCacheDir)..." -ForegroundColor DarkGray
+        Remove-Item -Recurse -Force $devCacheDir -ErrorAction SilentlyContinue
     }
 }
 

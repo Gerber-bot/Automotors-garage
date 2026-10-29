@@ -12,6 +12,8 @@ node_modules/
 dist/
 build/
 .next/
+.next-dev/
+.next-*/
 out/
 coverage/
 *.tsbuildinfo
@@ -33,6 +35,7 @@ pnpm-debug.log*
 playwright-report/
 test-results/
 .nyc_output/
+*auth_storage.json
 
 # Temporary and cache
 tmp/

@@ -64,7 +64,7 @@ if (Test-Path $pidFile) {
 }
 
 # 2. Comprobar si el puerto ya esta en uso
-$portConn = Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue
+$portConn = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
 if ($portConn) {
     $owningPid = $portConn[0].OwningProcess
     $owningProc = Get-Process -Id $owningPid -ErrorAction SilentlyContinue
