@@ -5,7 +5,8 @@
     "baseUrl": "./",
     "paths": {
       "@automotors/security-foundation": ["../../packages/security-foundation/src/index.ts"],
-      "@automotors/database": ["../../packages/database/src/index.ts"]
+      "@automotors/database": ["../../packages/database/src/index.ts"],
+      "@automotors/obd-core": ["../../packages/obd-core/src/index.ts"]
     }
   },
   "include": ["src/**/*", "test/**/*"]

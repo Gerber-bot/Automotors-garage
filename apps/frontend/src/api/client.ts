@@ -7,6 +7,8 @@ import type {
   Vehicle,
   WorkOrder,
   AIProposal,
+  SerialPortInfo,
+  ObdTelemetrySnapshot,
 } from './contracts.ts';
 
 export class ApiError extends Error {
@@ -397,5 +399,78 @@ export class ApiClient {
 
   public async seedDemoData(signal?: AbortSignal): Promise<any> {
     return this.request('/demo/seed', { method: 'POST', signal });
+  }
+
+  // Domain API Methods: Diagnostics (OBD-II)
+  public async getDiagnosticsPorts(signal?: AbortSignal): Promise<{ ports: SerialPortInfo[] }> {
+    return this.request<{ ports: SerialPortInfo[] }>('/diagnostics/ports', {
+      method: 'GET',
+      signal,
+    });
+  }
+
+  public async startDiagnosticsSession(
+    params: {
+      vehicleId: string;
+      transportType?: 'SIMULATED' | 'WINDOWS_USB_SERIAL';
+      comPort?: string;
+      simulatorConfig?: {
+        engineRpm?: number;
+        vehicleSpeed?: number;
+        coolantTemp?: number;
+        milActive?: boolean;
+        storedDtcs?: string[];
+        faultInjection?: 'NONE' | 'NO_DATA' | 'UNABLE_TO_CONNECT' | 'BUS_BUSY' | 'TIMEOUT';
+      };
+    },
+    signal?: AbortSignal
+  ): Promise<{ status: string; transportId: string; isSimulated: boolean }> {
+    return this.request<{ status: string; transportId: string; isSimulated: boolean }>(
+      '/diagnostics/session/start',
+      {
+        method: 'POST',
+        body: JSON.stringify(params),
+        signal,
+      }
+    );
+  }
+
+  public async getDiagnosticsLive(
+    vehicleId: string,
+    signal?: AbortSignal
+  ): Promise<ObdTelemetrySnapshot> {
+    return this.request<ObdTelemetrySnapshot>(
+      `/diagnostics/session/live?vehicleId=${encodeURIComponent(vehicleId)}`,
+      {
+        method: 'GET',
+        signal,
+      }
+    );
+  }
+
+  public async stopDiagnosticsSession(
+    vehicleId: string,
+    signal?: AbortSignal
+  ): Promise<{ status: string }> {
+    return this.request<{ status: string }>('/diagnostics/session/stop', {
+      method: 'POST',
+      body: JSON.stringify({ vehicleId }),
+      signal,
+    });
+  }
+
+  public async saveDiagnosticsSnapshot(
+    params: {
+      vehicleId: string;
+      telemetry: ObdTelemetrySnapshot;
+      technicianNotes?: string;
+    },
+    signal?: AbortSignal
+  ): Promise<{ record: any }> {
+    return this.request<{ record: any }>('/diagnostics/session/snapshot', {
+      method: 'POST',
+      body: JSON.stringify(params),
+      signal,
+    });
   }
 }

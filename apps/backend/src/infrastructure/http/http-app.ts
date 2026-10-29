@@ -32,6 +32,7 @@ import { InterpretObd2UseCase } from '../../modules/maintenance-intelligence/app
 import { MockAIProvider, MockTranscriptionProvider } from '../../modules/maintenance-intelligence/adapters/mock-ai.adapter.ts';
 import { DemoSeeder } from '../database/demo-seed.ts';
 import { getDemoDashboardHtml } from './demo-web-ui.ts';
+import { ObdDiagnosticsService, ObdError, ObdSecurityError } from '@automotors/obd-core';
 
 export interface HttpAppDependencies {
   db: DatabaseInstance;
@@ -64,6 +65,7 @@ export class HttpApp {
   private readonly calcPreventiveUseCase: CalculatePreventiveDueUseCase;
   private readonly voiceNoteUseCase: ProcessVoiceNoteUseCase;
   private readonly obd2UseCase: InterpretObd2UseCase;
+  private readonly obdService: ObdDiagnosticsService;
 
   constructor(deps: HttpAppDependencies) {
     this.db = deps.db;
@@ -120,6 +122,7 @@ export class HttpApp {
       new MockAIProvider()
     );
     this.obd2UseCase = new InterpretObd2UseCase(new MockAIProvider());
+    this.obdService = new ObdDiagnosticsService();
   }
 
   private sendJson(res: ServerResponse, statusCode: number, data: unknown, requestId?: string): void {
@@ -683,6 +686,110 @@ export class HttpApp {
         return this.sendJson(res, 200, result.getValue(), requestId);
       }
 
+      // DIAGNOSTICS: ENUMERATE USB SERIAL PORTS
+      if (pathname === '/api/v1/diagnostics/ports' && method === 'GET') {
+        const ports = await this.obdService.getAvailablePorts();
+        return this.sendJson(res, 200, { ports }, requestId);
+      }
+
+      // DIAGNOSTICS: START SESSION
+      if (pathname === '/api/v1/diagnostics/session/start' && method === 'POST') {
+        const body = await this.parseBody(req);
+        if (!body.vehicleId) {
+          return this.sendJson(res, 400, { error: 'vehicleId is required' }, requestId);
+        }
+
+        // Validate vehicle existence
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!uuidRegex.test(body.vehicleId)) {
+          return this.sendJson(res, 404, { error: `Vehicle '${body.vehicleId}' not found.` }, requestId);
+        }
+
+        const vehicle = await this.vehicleRepo.findById(body.vehicleId);
+        if (!vehicle) {
+          return this.sendJson(res, 404, { error: `Vehicle '${body.vehicleId}' not found.` }, requestId);
+        }
+
+        // Validate COM port safety if hardware transport is requested
+        if (body.transportType === 'USB_SERIAL' || body.transportType === 'WINDOWS_USB_SERIAL') {
+          if (!body.comPort || typeof body.comPort !== 'string') {
+            return this.sendJson(res, 400, { error: 'comPort path is required for USB serial transport.' }, requestId);
+          }
+          const comRegex = /^COM[0-9]{1,2}$/i;
+          if (!comRegex.test(body.comPort.trim())) {
+            return this.sendJson(res, 400, { error: `Invalid COM port format '${body.comPort}'. Must match COM[1-99].` }, requestId);
+          }
+        }
+
+        const session = await this.obdService.startSession({
+          vehicleId: body.vehicleId,
+          workshopId: tenantId,
+          userId: reqContext.principal?.id,
+          transportType: body.transportType === 'WINDOWS_USB_SERIAL' ? 'USB_SERIAL' : (body.transportType || 'SIMULATED'),
+          comPort: body.comPort ? body.comPort.trim().toUpperCase() : undefined,
+          simulatorConfig: body.simulatorConfig,
+        });
+
+        return this.sendJson(
+          res,
+          200,
+          {
+            status: 'CONNECTED',
+            transportId: session.transport.transportId,
+            isSimulated: session.transport.isSimulated,
+          },
+          requestId
+        );
+      }
+
+      // DIAGNOSTICS: POLL LIVE SNAPSHOT
+      if (pathname === '/api/v1/diagnostics/session/live' && method === 'GET') {
+        const vehicleId = parsedUrl.searchParams.get('vehicleId');
+        if (!vehicleId) {
+          return this.sendJson(res, 400, { error: 'vehicleId query parameter is required' }, requestId);
+        }
+        const telemetry = await this.obdService.getLiveTelemetry(tenantId, vehicleId);
+        return this.sendJson(res, 200, telemetry, requestId);
+      }
+
+      // DIAGNOSTICS: STOP SESSION
+      if (pathname === '/api/v1/diagnostics/session/stop' && method === 'POST') {
+        const body = await this.parseBody(req);
+        if (!body.vehicleId) {
+          return this.sendJson(res, 400, { error: 'vehicleId is required' }, requestId);
+        }
+        await this.obdService.stopSession(tenantId, body.vehicleId);
+        return this.sendJson(res, 200, { status: 'DISCONNECTED' }, requestId);
+      }
+
+      // DIAGNOSTICS: SAVE SNAPSHOT TO VEHICLE HISTORY
+      if (pathname === '/api/v1/diagnostics/session/snapshot' && method === 'POST') {
+        const body = await this.parseBody(req);
+        if (!body.vehicleId || !body.telemetry) {
+          return this.sendJson(res, 400, { error: 'vehicleId and telemetry snapshot are required' }, requestId);
+        }
+
+        // Validate vehicle existence
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!uuidRegex.test(body.vehicleId)) {
+          return this.sendJson(res, 404, { error: `Vehicle '${body.vehicleId}' not found.` }, requestId);
+        }
+
+        const vehicle = await this.vehicleRepo.findById(body.vehicleId);
+        if (!vehicle) {
+          return this.sendJson(res, 404, { error: `Vehicle '${body.vehicleId}' not found.` }, requestId);
+        }
+
+        const record = this.obdService.createDiagnosticRecord(
+          body.telemetry,
+          body.vehicleId,
+          tenantId,
+          body.technicianNotes,
+          reqContext.principal?.id
+        );
+        return this.sendJson(res, 201, { record }, requestId);
+      }
+
       // Route Not Found
       return this.sendJson(res, 404, { error: `Route '${method} ${pathname}' not found.` }, requestId);
     } catch (err: unknown) {
@@ -694,6 +801,12 @@ export class HttpApp {
       }
       if (err instanceof CrossTenantViolationError) {
         return this.sendJson(res, 403, { error: 'Access forbidden: cross-tenant access prohibited.' }, requestId);
+      }
+      if (err instanceof ObdSecurityError) {
+        return this.sendJson(res, 403, { error: err.message }, requestId);
+      }
+      if (err instanceof ObdError) {
+        return this.sendJson(res, 400, { error: err.message }, requestId);
       }
 
       this.log('ERROR', 'Unhandled internal server error', {

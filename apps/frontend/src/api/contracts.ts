@@ -100,3 +100,54 @@ export const AIProposalSchema = z.object({
   requiresConfirmation: z.literal(true),
 });
 export type AIProposal = z.infer<typeof AIProposalSchema>;
+
+// OBD-II Diagnostics Contracts
+export interface ObdSensorReading {
+  rpm: number;
+  speed: number;
+  coolantTemp: number;
+  engineLoad: number;
+  throttlePosition: number;
+  intakeAirTemp: number;
+  adapterVoltage: number;
+  milStatus: boolean;
+  dtcCount: number;
+  vin?: string;
+  supportedPids: readonly string[];
+}
+
+export interface ObdDtcCode {
+  code: string;
+  system: 'POWERTRAIN' | 'CHASSIS' | 'BODY' | 'NETWORK';
+  description: string;
+  severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  possibleCauses: readonly string[];
+  recommendedChecks: readonly string[];
+  isPending?: boolean;
+}
+
+export interface ObdTelemetrySnapshot {
+  timestamp: string;
+  isSimulated: boolean;
+  adapterIdentifier: string;
+  protocol: string;
+  sensors: ObdSensorReading;
+  dtcCodes: readonly ObdDtcCode[];
+}
+
+export interface SerialPortInfo {
+  path: string;
+  manufacturer?: string;
+  serialNumber?: string;
+  pnpId?: string;
+  friendlyName?: string;
+}
+
+export interface ObdAiAnalysis {
+  codesAnalyzed: string[];
+  systemicImpact: string;
+  urgencyLevel: 'IMMEDIATE_ACTION' | 'ATTENTION_NEEDED' | 'MONITOR';
+  mechanicChecklist: string[];
+  disclaimer: string;
+}
+

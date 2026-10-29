@@ -5,6 +5,7 @@ import { AppShell } from '../components/layout/AppShell.tsx';
 import { DashboardView } from '../components/domain/DashboardView.tsx';
 import { VehiclesView } from '../components/domain/VehiclesView.tsx';
 import { ServiceQuickEntry } from '../components/domain/ServiceQuickEntry.tsx';
+import { DiagnosticsView } from '../components/domain/DiagnosticsView.tsx';
 import { LoginView } from '../components/domain/LoginView.tsx';
 import { EmptyState, Button, LoadingState } from '../components/ui/index.ts';
 import { useAuth } from '../context/AuthContext.tsx';
@@ -22,6 +23,16 @@ export default function HomePage() {
   } = useAuth();
 
   const [currentScreen, setCurrentScreen] = React.useState<string>('dashboard');
+
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const screenParam = params.get('screen');
+      if (screenParam) {
+        setCurrentScreen(screenParam);
+      }
+    }
+  }, []);
 
   // Loading Session Recovery
   if (isLoading && !user) {
@@ -58,11 +69,18 @@ export default function HomePage() {
           onQuickServiceClick={() => setCurrentScreen('quick-service')}
           onVehicleClick={() => setCurrentScreen('vehicles')}
           onViewAllOrders={() => setCurrentScreen('orders')}
+          onDiagnosticsClick={() => setCurrentScreen('diagnostics')}
         />
       ) : currentScreen === 'vehicles' ? (
         <VehiclesView
           onQuickServiceForVehicle={() => setCurrentScreen('quick-service')}
         />
+      ) : currentScreen === 'diagnostics' || currentScreen === 'ai-obd' ? (
+        <div className="space-y-4">
+          <DiagnosticsView
+            onNavigateToHistory={() => setCurrentScreen('vehicles')}
+          />
+        </div>
       ) : currentScreen === 'quick-service' ? (
         <div className="space-y-4">
           <div className="flex items-center justify-between pb-2">

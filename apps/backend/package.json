@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@automotors/database": "file:../../packages/database",
+    "@automotors/obd-core": "file:../../packages/obd-core",
     "@automotors/security-foundation": "file:../../packages/security-foundation",
     "zod": "^3.23.8"
   },
