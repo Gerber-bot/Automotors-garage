@@ -34,7 +34,7 @@ export class ExplainMaintenanceUseCase {
         basis: ['Falta de historial de servicios previos o kilometraje no confirmado.'],
         uncertainty: 'ALTA: Se requiere ingresar el kilometraje actual o consultar el manual del fabricante.',
         dataLimitations: ['Falta registro de último cambio efectuado', 'No se puede estimar tasa de desgaste mensual'],
-        disclaimer: 'Cálculo de mantenimiento sujeto a verificación manual en taller especializado.',
+        disclaimer: 'Orientación técnica preventiva. La decisión de recambio debe validarse por inspección física en taller.',
         isAiGenerated: false,
         providerName: 'DeterministicMaintenanceEngine',
       };

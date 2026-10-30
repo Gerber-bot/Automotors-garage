@@ -1,4 +1,5 @@
 export * from './iam.ts';
+export * from './knowledge-base.ts';
 export * from './vehicles.ts';
 export * from './customers.ts';
 export * from './work-orders.ts';

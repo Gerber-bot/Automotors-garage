@@ -28,6 +28,9 @@ export interface ServiceIntervalRule {
   readonly sourceCitation: string;
   readonly severeUsageIntervalKm?: number;
   readonly severeUsageIntervalMonths?: number;
+  readonly operation?: 'REPLACE' | 'INSPECT' | 'ADJUST' | 'CLEAN' | string;
+  readonly ruleVersion?: number;
+  readonly verificationStatus?: string;
 }
 
 export interface VehicleUsageConditions {

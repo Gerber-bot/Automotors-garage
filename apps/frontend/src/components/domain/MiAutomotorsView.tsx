@@ -21,6 +21,7 @@ import {
   Phone,
   Mail,
   HelpCircle,
+  BookOpen,
 } from 'lucide-react';
 import {
   Card,
@@ -40,6 +41,10 @@ import {
 import type {
   HistorySummary,
   MaintenanceExplanation,
+  KbConfiguration,
+  KbTechnicalSpec,
+  KbMaintenanceRule,
+  TechnicalIdentificationResult,
 } from '../../api/contracts.ts';
 import { useAuth } from '../../context/AuthContext.tsx';
 
@@ -74,6 +79,14 @@ export function MiAutomotorsView() {
     insufficientDataMessage: string;
     predictions: OwnerPredictionItem[];
   } | null>(null);
+
+  // Knowledge Base state
+  const [kbConfigData, setKbConfigData] = React.useState<
+    (KbConfiguration & { specs: KbTechnicalSpec[]; rules: KbMaintenanceRule[] }) | null
+  >(null);
+  const [kbIdentification, setKbIdentification] = React.useState<TechnicalIdentificationResult | null>(null);
+  const [isLoadingKb, setIsLoadingKb] = React.useState<boolean>(false);
+  const [isBindingKb, setIsBindingKb] = React.useState<boolean>(false);
 
   const [isLoadingVehicles, setIsLoadingVehicles] = React.useState<boolean>(true);
   const [isLoadingDetails, setIsLoadingDetails] = React.useState<boolean>(false);
@@ -240,6 +253,70 @@ export function MiAutomotorsView() {
     () => vehicles.find((v) => v.id === selectedVehicleId) ?? vehicles[0] ?? null,
     [vehicles, selectedVehicleId]
   );
+
+  const loadVehicleKbData = React.useCallback(
+    async (targetVehicle: OwnerVehicle) => {
+      setIsLoadingKb(true);
+      try {
+        if (targetVehicle.configurationId) {
+          const configData = await apiClient.getKbConfiguration(targetVehicle.configurationId);
+          setKbConfigData(configData);
+          setKbIdentification(null);
+        } else {
+          setKbConfigData(null);
+          const ident = await apiClient.identifyVehicleTechnicalProfile({
+            make: targetVehicle.make,
+            model: targetVehicle.model,
+            year: targetVehicle.year,
+            engine: targetVehicle.engine || undefined,
+            fuelType: targetVehicle.fuelType,
+            transmission: targetVehicle.transmission,
+            userDeclaredDistribution: targetVehicle.distributionType,
+          });
+          setKbIdentification(ident);
+          if (ident.status === 'EXACT_MATCH' && ident.matchedConfiguration) {
+            const configData = await apiClient.getKbConfiguration(ident.matchedConfiguration.id);
+            setKbConfigData(configData);
+          }
+        }
+      } catch (err: unknown) {
+        console.warn('Error loading vehicle KB data:', err);
+      } finally {
+        setIsLoadingKb(false);
+      }
+    },
+    [apiClient]
+  );
+
+  React.useEffect(() => {
+    if (selectedVehicle) {
+      void loadVehicleKbData(selectedVehicle);
+    } else {
+      setKbConfigData(null);
+      setKbIdentification(null);
+    }
+  }, [selectedVehicle, loadVehicleKbData]);
+
+  const handleSelectCandidateConfiguration = async (candidateId: string) => {
+    if (!selectedVehicle) return;
+    setIsBindingKb(true);
+    setErrorBanner(null);
+    try {
+      await apiClient.bindOwnerVehicleConfiguration(selectedVehicle.id, candidateId);
+      setSuccessBanner('Configuración técnica homologada vinculada exitosamente al vehículo.');
+      setVehicles((prev) =>
+        prev.map((v) => (v.id === selectedVehicle.id ? { ...v, configurationId: candidateId } : v))
+      );
+      await Promise.all([
+        loadVehicleDetails(selectedVehicle.id),
+        loadVehicleKbData({ ...selectedVehicle, configurationId: candidateId }),
+      ]);
+    } catch (err: unknown) {
+      setErrorBanner(err instanceof Error ? err.message : 'Error al vincular la motorización homologada.');
+    } finally {
+      setIsBindingKb(false);
+    }
+  };
 
   const handleFillLoganTemplate = () => {
     setVehMake('Renault');
@@ -669,52 +746,295 @@ export function MiAutomotorsView() {
                 </Card>
 
                 {/* TECHNICAL KNOWLEDGE BASE PROFILE CARD */}
-                <Card className="bg-slate-900/80 border-slate-800 p-5 space-y-3">
+                <Card className="bg-slate-900/90 border-slate-800 p-5 space-y-4">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-2">
-                      <Sparkles className="h-4 w-4 text-sky-400" />
+                      <BookOpen className="h-4 w-4 text-sky-400" />
                       <h3 className="text-sm font-bold text-white">
-                        Base de Conocimiento Técnico & Especificaciones OEM
+                        Ficha Técnica & Pautas de Mantenimiento (Knowledge Base)
                       </h3>
                     </div>
-                    {selectedVehicle.technicalProfile ? (
-                      selectedVehicle.technicalProfile.isProfileComplete ? (
-                        <Badge variant="success" size="sm">
-                          Perfil Técnico Completo
+                    {isLoadingKb ? (
+                      <Badge variant="secondary" size="sm">
+                        Consultando catálogo técnico...
+                      </Badge>
+                    ) : kbConfigData ? (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge variant="info" size="sm" dot>
+                          Selección Realizada por el Propietario
                         </Badge>
-                      ) : (
-                        <Badge variant="warning" size="sm">
-                          Perfil Técnico Parcial — Motor por Confirmar
+                        {kbConfigData.verificationStatus === 'VERIFIED' ? (
+                          <Badge variant="success" size="sm">
+                            Especificación Técnica Verificada
+                          </Badge>
+                        ) : (
+                          <Badge variant="warning" size="sm">
+                            Especificación Pendiente de Verificación
+                          </Badge>
+                        )}
+                        <Badge
+                          variant={kbConfigData.powertrain?.timingMechanism === 'CADENA' ? 'success' : 'warning'}
+                          size="sm"
+                        >
+                          Distribución: {kbConfigData.powertrain?.timingMechanism || 'OEM'}
                         </Badge>
-                      )
+                      </div>
+                    ) : kbIdentification?.status === 'AMBIGUOUS' ? (
+                      <Badge variant="warning" size="sm" dot>
+                        Configuración Pendiente — Variantes Detectadas
+                      </Badge>
+                    ) : kbIdentification?.status === 'POSSIBLE_MATCH' ? (
+                      <Badge variant="info" size="sm">
+                        Coincidencia Sugerida en Catálogo
+                      </Badge>
                     ) : (
                       <Badge variant="secondary" size="sm">
-                        Perfil Genérico
+                        Configuración Pendiente
                       </Badge>
                     )}
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                    <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-1">
-                      <span className="font-semibold text-slate-300 block">
-                        Identificación de Motorización:
-                      </span>
-                      <p className="text-slate-400 leading-relaxed">
-                        {selectedVehicle.technicalProfile?.exactEngineCodeNote ||
-                          selectedVehicle.exactEngineCode ||
-                          'Código exacto de motor pendiente de confirmación documental.'}
-                      </p>
+                  {isLoadingKb ? (
+                    <div className="p-6 text-center text-xs text-slate-400">
+                      Cargando especificaciones y pautas de mantenimiento homologadas...
                     </div>
-                    <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-1">
-                      <span className="font-semibold text-slate-300 block">
-                        Arquitectura de Distribución:
-                      </span>
-                      <p className="text-slate-400 leading-relaxed">
-                        {selectedVehicle.technicalProfile?.distributionNote ||
-                          'Consultá el manual de propietario para verificar si equipa cadena metálica o correa dentada.'}
-                      </p>
+                  ) : kbConfigData ? (
+                    <div className="space-y-4">
+                      {/* MOTOR & POWERTRAIN SUMMARY */}
+                      <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+                        <div className="space-y-1">
+                          <span className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold block">
+                            Configuración Homologada:
+                          </span>
+                          <span className="text-sm font-bold text-white block">
+                            {kbConfigData.commercialName}
+                          </span>
+                          <span className="text-slate-300">
+                            Motor {kbConfigData.powertrain?.engineCode} ({kbConfigData.powertrain?.family || kbConfigData.commercialName}) •{' '}
+                            {kbConfigData.powertrain?.valves ?? 0}V • {kbConfigData.powertrain?.displacementCc ?? 0} cc •{' '}
+                            {kbConfigData.powertrain?.powerHp ?? 0} CV
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-400 text-xs">Mercado:</span>
+                          <Badge variant="secondary" size="sm">{kbConfigData.market}</Badge>
+                          {kbConfigData.sourceTitle && (
+                            <Badge variant="info" size="sm" title={kbConfigData.sourceTitle}>
+                              Doc. OEM
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* TECHNICAL SPECS GRID */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 text-xs">
+                        <div className="p-3 rounded-xl bg-slate-950/50 border border-slate-800/80">
+                          <span className="text-[11px] uppercase tracking-wider text-slate-400 block font-semibold">
+                            Aceite Motor OEM
+                          </span>
+                          <span className="text-white font-mono font-medium block mt-1">
+                            {kbConfigData.powertrain?.oilViscosityOem || 'Pendiente de verificación'}
+                          </span>
+                          <span className="text-[11px] text-slate-400 block mt-0.5">
+                            Capacidad:{' '}
+                            {kbConfigData.powertrain?.oilCapacityLiters
+                              ? `${kbConfigData.powertrain.oilCapacityLiters} L`
+                              : 'Pendiente de verificación documental'}
+                          </span>
+                        </div>
+
+                        <div className="p-3 rounded-xl bg-slate-950/50 border border-slate-800/80">
+                          <span className="text-[11px] uppercase tracking-wider text-slate-400 block font-semibold">
+                            Líquido de Frenos
+                          </span>
+                          <span className="text-white font-medium block mt-1">
+                            {kbConfigData.specs.find((s) => s.category === 'BRAKES')?.specValue ||
+                              'Pendiente de verificación documental'}
+                          </span>
+                          <span className="text-[11px] text-slate-400 block mt-0.5">
+                            {kbConfigData.verificationStatus === 'VERIFIED'
+                              ? 'Según pauta verificada'
+                              : 'En revisión documental'}
+                          </span>
+                        </div>
+
+                        <div className="p-3 rounded-xl bg-slate-950/50 border border-slate-800/80">
+                          <span className="text-[11px] uppercase tracking-wider text-slate-400 block font-semibold">
+                            Refrigerante Motor
+                          </span>
+                          <span className="text-white font-medium block mt-1">
+                            {kbConfigData.specs.find((s) => s.category === 'COOLANT' || s.category === 'COOLING')
+                              ?.specValue || 'Pendiente de verificación documental'}
+                          </span>
+                          <span className="text-[11px] text-slate-400 block mt-0.5">
+                            {kbConfigData.verificationStatus === 'VERIFIED'
+                              ? 'Circuito verificado'
+                              : 'En revisión documental'}
+                          </span>
+                        </div>
+
+                        <div className="p-3 rounded-xl bg-slate-950/50 border border-slate-800/80">
+                          <span className="text-[11px] uppercase tracking-wider text-slate-400 block font-semibold">
+                            Distribución ({kbConfigData.powertrain?.timingMechanism})
+                          </span>
+                          <span className={`font-semibold block mt-1 ${kbConfigData.powertrain?.timingMechanism === 'CADENA' ? 'text-emerald-400' : 'text-amber-400'}`}>
+                            {kbConfigData.powertrain?.timingMechanism === 'CADENA'
+                              ? 'Arquitectura por Cadena Metálica'
+                              : 'Arquitectura por Correa Dentada'}
+                          </span>
+                          <span className="text-[11px] text-slate-400 block mt-0.5">
+                            {kbConfigData.powertrain?.timingObservations || 'Pendiente de verificación documental'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* RULES ACCORDION / SUMMARY */}
+                      {kbConfigData.rules && kbConfigData.rules.length > 0 && (
+                        <div className="space-y-2 pt-2 border-t border-slate-800/70">
+                          <span className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold block">
+                            {kbConfigData.rules.every((r) => r.verificationStatus === 'VERIFIED')
+                              ? `Pautas de Mantenimiento Homologadas (${kbConfigData.rules.length} reglas verificadas)`
+                              : `Pautas de Mantenimiento en Catálogo (${kbConfigData.rules.filter((r) => r.verificationStatus === 'VERIFIED').length} verificadas / ${kbConfigData.rules.filter((r) => r.verificationStatus !== 'VERIFIED').length} pendientes de verificación — excluidas de cálculo automático)`}
+                          </span>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                            {kbConfigData.rules.slice(0, 6).map((rule) => (
+                              <div
+                                key={rule.id}
+                                className="p-2.5 rounded-lg bg-slate-950/40 border border-slate-800/60 flex items-center justify-between gap-2"
+                              >
+                                <div>
+                                  <span className="font-semibold text-slate-200 block">{rule.title}</span>
+                                  <span className="text-[11px] text-slate-400">
+                                    {rule.intervalKm ? `${rule.intervalKm.toLocaleString('es-AR')} km` : 'Solo por tiempo'}
+                                    {rule.intervalMonths ? ` / ${rule.intervalMonths} meses` : ''}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <Badge
+                                    variant={rule.verificationStatus === 'VERIFIED' ? 'success' : 'warning'}
+                                    size="sm"
+                                  >
+                                    {rule.verificationStatus === 'VERIFIED' ? 'Verificada' : 'Pendiente'}
+                                  </Badge>
+                                  <Badge variant={rule.operation === 'REPLACE' ? 'info' : 'secondary'} size="sm">
+                                    {rule.operation === 'REPLACE' ? 'Cambio' : 'Inspección'}
+                                  </Badge>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  </div>
+                  ) : kbIdentification?.status === 'AMBIGUOUS' ? (
+                    /* AMBIGUOUS VARIANT SELECTION (RENAULT LOGAN CASE) */
+                    <div className="p-4 rounded-xl bg-amber-950/20 border border-amber-800/60 space-y-3">
+                      <div className="flex items-start gap-2.5">
+                        <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+                        <div className="space-y-1">
+                          <h4 className="text-xs font-bold text-amber-200 uppercase tracking-wider">
+                            Selección Requerida: Se detectaron múltiples motorizaciones posibles
+                          </h4>
+                          <p className="text-xs text-amber-300/90 leading-relaxed">
+                            {kbIdentification.reason}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
+                        {kbIdentification.candidateConfigurations.map((candidate) => (
+                          <div
+                            key={candidate.id}
+                            className="p-3.5 rounded-xl bg-slate-900 border border-slate-700/80 hover:border-sky-500/60 transition-all flex flex-col justify-between gap-3 text-xs"
+                          >
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between gap-1 flex-wrap">
+                                <span className="font-bold text-white text-sm">
+                                  {candidate.commercialName}
+                                </span>
+                                <Badge
+                                  variant={candidate.powertrain?.timingMechanism === 'CADENA' ? 'success' : 'warning'}
+                                  size="sm"
+                                >
+                                  {candidate.powertrain?.timingMechanism === 'CADENA'
+                                    ? 'CADENA (Libre mant.)'
+                                    : 'CORREA (60.000 km)'}
+                                </Badge>
+                              </div>
+                              <p className="text-slate-300">
+                                Motor {candidate.powertrain?.engineCode} ({candidate.powertrain?.family || candidate.commercialName}) •{' '}
+                                {candidate.powertrain?.valves}V • {candidate.powertrain?.powerHp} CV
+                              </p>
+                              {candidate.sourceTitle && (
+                                <p className="text-[11px] text-slate-500">
+                                  Fuente: {candidate.sourceTitle}
+                                </p>
+                              )}
+                            </div>
+
+                            <div className="space-y-1.5 pt-1">
+                              <Button
+                                variant="primary"
+                                size="sm"
+                                fullWidth
+                                isLoading={isBindingKb}
+                                leftIcon={<CheckCircle2 className="h-3.5 w-3.5" />}
+                                onClick={() => handleSelectCandidateConfiguration(candidate.id)}
+                              >
+                                Seleccionar esta Motorización (Mi Unidad)
+                              </Button>
+                              <span className="text-[10px] text-slate-400 block text-center">
+                                Selección declarada por titular • Aplica pautas OEM verificadas
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : kbIdentification?.status === 'POSSIBLE_MATCH' && kbIdentification.matchedConfiguration ? (
+                    <div className="p-4 rounded-xl bg-sky-950/20 border border-sky-800/60 space-y-3">
+                      <div className="flex items-start justify-between gap-2 flex-wrap">
+                        <div>
+                          <span className="text-xs font-bold text-sky-200">
+                            Coincidencia Sugerida en Catálogo:
+                          </span>
+                          <p className="text-xs text-sky-300 mt-0.5">
+                            {kbIdentification.matchedConfiguration.commercialName} ({kbIdentification.matchedConfiguration.powertrain?.engineCode})
+                          </p>
+                        </div>
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          isLoading={isBindingKb}
+                          onClick={() => handleSelectCandidateConfiguration(kbIdentification.matchedConfiguration!.id)}
+                        >
+                          Seleccionar Motorización Sugerida
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                      <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-1">
+                        <span className="font-semibold text-slate-300 block">
+                          Identificación de Motorización:
+                        </span>
+                        <p className="text-slate-400 leading-relaxed">
+                          {selectedVehicle.technicalProfile?.exactEngineCodeNote ||
+                            selectedVehicle.exactEngineCode ||
+                            'Motor estándar sin homologación específica asignada.'}
+                        </p>
+                      </div>
+                      <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-1">
+                        <span className="font-semibold text-slate-300 block">
+                          Arquitectura de Distribución:
+                        </span>
+                        <p className="text-slate-400 leading-relaxed">
+                          {selectedVehicle.technicalProfile?.distributionNote ||
+                            'Consultá el manual de propietario para verificar si equipa cadena metálica o correa dentada.'}
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </Card>
               </>
             )}

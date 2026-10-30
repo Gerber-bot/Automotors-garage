@@ -38,6 +38,7 @@ export const VehicleSchema = z.object({
   engine: z.string().optional(),
   fuelType: z.string().optional(),
   currentMileage: z.number().nonnegative(),
+  configurationId: z.string().optional(),
 });
 export type Vehicle = z.infer<typeof VehicleSchema>;
 
@@ -182,5 +183,127 @@ export interface AIStatus {
   providerName: string;
   model: string;
   message: string;
+}
+
+// ============================================================================
+// AUTOMOTORS VEHICLE KNOWLEDGE BASE CONTRACTS
+// ============================================================================
+
+export interface KbManufacturer {
+  id: string;
+  name: string;
+  country: string | null;
+  status: string;
+}
+
+export interface KbModel {
+  id: string;
+  manufacturerId: string;
+  name: string;
+  status: string;
+}
+
+export interface KbGeneration {
+  id: string;
+  modelId: string;
+  generationName: string;
+  generationCode: string | null;
+  startYear: number;
+  endYear: number | null;
+  market: string;
+  verificationStatus: string;
+}
+
+export interface KbPowertrain {
+  id: string;
+  manufacturerId: string;
+  engineCode: string;
+  family: string | null;
+  displacementCc: number | null;
+  displacementLiters: string | null;
+  fuelType: string;
+  valves: number | null;
+  powerHp: number | null;
+  timingMechanism: 'CADENA' | 'CORREA' | 'ENGRANAJE' | 'DESCONOCIDO' | string;
+  timingObservations: string | null;
+  oilViscosityOem: string | null;
+  oilCapacityLiters: string | null;
+  verificationStatus: string;
+}
+
+export interface KbConfiguration {
+  id: string;
+  modelId: string;
+  generationId: string;
+  powertrainId: string | null;
+  commercialName: string;
+  yearFrom: number;
+  yearTo: number | null;
+  market: string;
+  transmission: string;
+  bodyStyle: string | null;
+  trim: string | null;
+  sourceId: string | null;
+  verificationStatus: string;
+  makeName?: string;
+  modelName?: string;
+  generationName?: string;
+  powertrain?: KbPowertrain | null;
+  sourceTitle?: string | null;
+}
+
+export interface KbTechnicalSpec {
+  id: string;
+  configurationId: string;
+  category: string;
+  specKey: string;
+  specValue: string;
+  unit: string | null;
+  condition: string | null;
+  sourceId: string | null;
+  verificationStatus: string;
+}
+
+export interface KbMaintenanceRule {
+  id: string;
+  configurationId: string;
+  category: string;
+  operation: 'REPLACE' | 'INSPECT' | 'ADJUST' | 'CLEAN' | string;
+  title: string;
+  description: string | null;
+  intervalKm: number | null;
+  intervalMonths: number | null;
+  severeIntervalKm: number | null;
+  severeIntervalMonths: number | null;
+  conditions: string | null;
+  sourceId: string | null;
+  verificationStatus: string;
+  ruleVersion: number;
+  previousVersionId: string | null;
+  isActive: boolean;
+  verifiedByUserId: string | null;
+  verifiedAt: string | null;
+  verificationNotes: string | null;
+  sourceTitle?: string | null;
+  sourceReference?: string | null;
+}
+
+export type TechnicalMatchStatus =
+  | 'EXACT_MATCH'
+  | 'POSSIBLE_MATCH'
+  | 'AMBIGUOUS'
+  | 'NO_MATCH'
+  | 'INSUFFICIENT_DATA';
+
+export interface TechnicalIdentificationResult {
+  status: TechnicalMatchStatus;
+  matchedConfiguration: KbConfiguration | null;
+  candidateConfigurations: KbConfiguration[];
+  reason: string;
+  requiresConfirmation: boolean;
+  isDocumentarilyVerified: boolean;
+  distributionType: 'CADENA' | 'CORREA' | 'DESCONOCIDO';
+  exactEngineCodeStatus: 'CONFIRMED' | 'PENDING_CONFIRMATION';
+  technicalNotes?: string;
 }
 

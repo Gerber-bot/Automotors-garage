@@ -123,6 +123,24 @@ export class PostgresUserRepository {
     return this.findById(userId);
   }
 
+  private sanitizeWorkshopRole(rawRole: string): string {
+    const normalized = rawRole.trim().toUpperCase();
+    // SECURITY INVARIANT: SUPER_ADMIN is an exclusive platform-level privilege
+    // and can NEVER be obtained or inherited from a workshop membership.
+    const allowedTenantRoles = new Set([
+      'ADMIN',
+      'WORKSHOP_OWNER',
+      'MANAGER',
+      'MECHANIC',
+      'RECEPTIONIST',
+      'VIEWER',
+    ]);
+    if (normalized === 'SUPER_ADMIN' || !allowedTenantRoles.has(normalized)) {
+      return 'VIEWER';
+    }
+    return normalized;
+  }
+
   private getPermissionsForRole(role: string): string[] {
     switch (role.toUpperCase()) {
       case 'ADMIN':
@@ -149,12 +167,15 @@ export class PostgresUserRepository {
       .innerJoin(workshops, eq(workshopMembers.workshopId, workshops.id))
       .where(and(eq(workshopMembers.userId, userId), eq(workshopMembers.isActive, true)));
 
-    return rows.map((r: any) => ({
-      workshopId: r.workshopId,
-      workshopName: r.workshopName,
-      role: r.role,
-      permissions: this.getPermissionsForRole(r.role),
-    }));
+    return rows.map((r: any) => {
+      const safeRole = this.sanitizeWorkshopRole(r.role);
+      return {
+        workshopId: r.workshopId,
+        workshopName: r.workshopName,
+        role: safeRole,
+        permissions: this.getPermissionsForRole(safeRole),
+      };
+    });
   }
 
   public async verifyMembership(userId: string, workshopId: string): Promise<UserWorkshopMembership | null> {
@@ -176,11 +197,12 @@ export class PostgresUserRepository {
       .limit(1);
 
     if (!rows[0]) return null;
+    const safeRole = this.sanitizeWorkshopRole(rows[0].role);
     return {
       workshopId: rows[0].workshopId,
       workshopName: rows[0].workshopName,
-      role: rows[0].role,
-      permissions: this.getPermissionsForRole(rows[0].role),
+      role: safeRole,
+      permissions: this.getPermissionsForRole(safeRole),
     };
   }
 }

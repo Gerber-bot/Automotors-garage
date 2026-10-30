@@ -10,6 +10,13 @@ import type {
   AIStatus,
   HistorySummary,
   MaintenanceExplanation,
+  KbManufacturer,
+  KbModel,
+  KbGeneration,
+  KbConfiguration,
+  KbTechnicalSpec,
+  KbMaintenanceRule,
+  TechnicalIdentificationResult,
 } from './contracts.ts';
 
 export class ApiError extends Error {
@@ -80,6 +87,7 @@ export interface OwnerVehicle {
   fuelType: string;
   currentMileage: number;
   ownerUserId: string;
+  configurationId?: string | null;
   transmission?: string;
   distributionType?: string;
   exactEngineCode?: string;
@@ -727,5 +735,114 @@ export class ApiClient {
         signal,
       }
     );
+  }
+
+  // ============================================================================
+  // VEHICLE KNOWLEDGE BASE METHODS
+  // ============================================================================
+
+  public async listKbManufacturers(signal?: AbortSignal): Promise<KbManufacturer[]> {
+    return this.request<KbManufacturer[]>('/kb/manufacturers', { method: 'GET', signal });
+  }
+
+  public async listKbModels(manufacturerId?: string, signal?: AbortSignal): Promise<KbModel[]> {
+    const qs = manufacturerId ? `?manufacturerId=${encodeURIComponent(manufacturerId)}` : '';
+    return this.request<KbModel[]>(`/kb/models${qs}`, { method: 'GET', signal });
+  }
+
+  public async listKbGenerations(modelId: string, signal?: AbortSignal): Promise<KbGeneration[]> {
+    return this.request<KbGeneration[]>(`/kb/generations?modelId=${encodeURIComponent(modelId)}`, {
+      method: 'GET',
+      signal,
+    });
+  }
+
+  public async searchKbConfigurations(
+    params: { make?: string; model?: string; year?: number; market?: string },
+    signal?: AbortSignal
+  ): Promise<KbConfiguration[]> {
+    const sp = new URLSearchParams();
+    if (params.make) sp.set('make', params.make);
+    if (params.model) sp.set('model', params.model);
+    if (params.year) sp.set('year', String(params.year));
+    if (params.market) sp.set('market', params.market);
+    const qs = sp.toString() ? `?${sp.toString()}` : '';
+    return this.request<KbConfiguration[]>(`/kb/configurations${qs}`, { method: 'GET', signal });
+  }
+
+  public async getKbConfiguration(
+    id: string,
+    signal?: AbortSignal
+  ): Promise<KbConfiguration & { specs: KbTechnicalSpec[]; rules: KbMaintenanceRule[] }> {
+    return this.request(`/kb/configurations/${encodeURIComponent(id)}`, { method: 'GET', signal });
+  }
+
+  public async identifyVehicleTechnicalProfile(
+    params: {
+      make: string;
+      model: string;
+      year: number;
+      engine?: string;
+      fuelType?: string;
+      transmission?: string;
+      userDeclaredDistribution?: string;
+      userDeclaredEngineCode?: string;
+    },
+    signal?: AbortSignal
+  ): Promise<TechnicalIdentificationResult> {
+    return this.request<TechnicalIdentificationResult>('/kb/identify', {
+      method: 'POST',
+      body: JSON.stringify(params),
+      signal,
+    });
+  }
+
+  public async bindOwnerVehicleConfiguration(
+    vehicleId: string,
+    configurationId: string,
+    signal?: AbortSignal
+  ): Promise<OwnerVehicle> {
+    return this.request<OwnerVehicle>(`/owner/vehicles/${encodeURIComponent(vehicleId)}/configuration`, {
+      method: 'POST',
+      body: JSON.stringify({ configurationId }),
+      signal,
+    });
+  }
+
+  public async bindWorkshopVehicleConfiguration(
+    vehicleId: string,
+    configurationId: string,
+    signal?: AbortSignal
+  ): Promise<any> {
+    return this.request(`/vehicles/${encodeURIComponent(vehicleId)}/configuration`, {
+      method: 'POST',
+      body: JSON.stringify({ configurationId }),
+      signal,
+    });
+  }
+
+  public async verifyKbRule(
+    ruleId: string,
+    notes?: string,
+    signal?: AbortSignal
+  ): Promise<KbMaintenanceRule> {
+    return this.request<KbMaintenanceRule>(`/kb/rules/${encodeURIComponent(ruleId)}/verify`, {
+      method: 'POST',
+      body: JSON.stringify({ notes }),
+      signal,
+    });
+  }
+
+  public async createKbRuleRevision(
+    ruleId: string,
+    changes: Partial<KbMaintenanceRule>,
+    autoVerify?: boolean,
+    signal?: AbortSignal
+  ): Promise<KbMaintenanceRule> {
+    return this.request<KbMaintenanceRule>(`/kb/rules/${encodeURIComponent(ruleId)}/revision`, {
+      method: 'POST',
+      body: JSON.stringify({ changes, autoVerify }),
+      signal,
+    });
   }
 }

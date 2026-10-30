@@ -9,6 +9,7 @@ const __dirname = dirname(__filename);
 const MIGRATION_FILES = [
   '0001_initial_schema.sql',
   '0002_owner_portal.sql',
+  '0003_vehicle_knowledge_base.sql',
 ];
 
 export class DatabaseMigrator {

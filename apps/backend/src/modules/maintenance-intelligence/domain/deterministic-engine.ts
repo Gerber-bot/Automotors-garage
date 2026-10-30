@@ -25,7 +25,7 @@ export const DueReason = {
 export type DueReason = (typeof DueReason)[keyof typeof DueReason];
 
 export const EstimationConfidence = {
-  HIGH: 'HIGH',       // Known previous service with exact date & mileage + calculated usage rate
+  HIGH: 'HIGH',       // Known previous service with exact date & mileage + calculated empirical usage rate
   MEDIUM: 'MEDIUM',   // Previous service known, usage rate assumed from generic average
   LOW: 'LOW',         // Estimated solely from vehicle registration year and total odometer
   NONE: 'NONE',       // Insufficient data
@@ -38,6 +38,26 @@ export interface PreviousServiceEntry {
   readonly category: ServiceCategory;
 }
 
+export interface OdometerReadingPoint {
+  readonly date: Date;
+  readonly mileage: number;
+}
+
+export interface KbIntervalRuleLike {
+  readonly id: string;
+  readonly category: ServiceCategory | string;
+  readonly title: string;
+  readonly operation?: 'REPLACE' | 'INSPECT' | 'ADJUST' | 'CLEAN' | string;
+  readonly intervalKm?: number | null;
+  readonly intervalMonths?: number | null;
+  readonly severeUsageIntervalKm?: number | null;
+  readonly severeUsageIntervalMonths?: number | null;
+  readonly source?: IntervalSource | string;
+  readonly sourceCitation?: string;
+  readonly ruleVersion?: number;
+  readonly verificationStatus?: string;
+}
+
 export interface MaintenanceCalculationInput {
   readonly vehicle: {
     readonly id: string;
@@ -46,8 +66,9 @@ export interface MaintenanceCalculationInput {
     readonly year: number;
     readonly currentMileage: number;
   };
-  readonly rule: ServiceIntervalRule | null;
+  readonly rule: ServiceIntervalRule | KbIntervalRuleLike | null;
   readonly previousServices?: readonly PreviousServiceEntry[];
+  readonly odometerReadings?: readonly OdometerReadingPoint[];
   readonly usageConditions?: VehicleUsageConditions;
   readonly currentDate?: Date;
 }
@@ -58,11 +79,16 @@ export interface MaintenanceCalculationResult {
   readonly nextDueMileage: number | null;
   readonly remainingKm: number | null;
   readonly nextDueDate: Date | null;
+  readonly calendarDueDate?: Date | null;
+  readonly estimatedUsageDate?: Date | null;
   readonly dueReason: DueReason;
   readonly estimatedDaysRemaining: number | null;
   readonly confidence: EstimationConfidence;
-  readonly intervalSource: IntervalSource | 'NONE';
+  readonly intervalSource: IntervalSource | string | 'NONE';
   readonly sourceCitation?: string;
+  readonly operation?: string;
+  readonly ruleVersion?: number;
+  readonly verificationStatus?: string;
   readonly warning?: string;
 }
 
@@ -76,7 +102,7 @@ export class DeterministicMaintenanceEngine {
     if (!input.rule || !input.vehicle || input.vehicle.currentMileage == null) {
       return {
         status: MaintenanceStatus.INSUFFICIENT_DATA,
-        category: input.rule?.category ?? 'UNKNOWN',
+        category: (input.rule?.category as ServiceCategory) ?? 'UNKNOWN',
         nextDueMileage: null,
         remainingKm: null,
         nextDueDate: null,
@@ -91,8 +117,49 @@ export class DeterministicMaintenanceEngine {
     const { rule, vehicle, usageConditions } = input;
     const isSevere = usageConditions?.isSevereUsage ?? false;
 
-    const intervalKm = (isSevere && rule.severeUsageIntervalKm) ? rule.severeUsageIntervalKm : rule.intervalKm;
-    const intervalMonths = (isSevere && rule.severeUsageIntervalMonths) ? rule.severeUsageIntervalMonths : rule.intervalMonths;
+    // Reject unverified rules from automatic calculation if verificationStatus is present and not VERIFIED
+    if (rule.verificationStatus && rule.verificationStatus !== 'VERIFIED') {
+      return {
+        status: MaintenanceStatus.INSUFFICIENT_DATA,
+        category: (rule.category as ServiceCategory) ?? 'UNKNOWN',
+        nextDueMileage: null,
+        remainingKm: null,
+        nextDueDate: null,
+        dueReason: DueReason.NONE,
+        estimatedDaysRemaining: null,
+        confidence: EstimationConfidence.NONE,
+        intervalSource: rule.source ?? 'NONE',
+        sourceCitation: rule.sourceCitation,
+        operation: rule.operation ?? 'REPLACE',
+        ruleVersion: rule.ruleVersion ?? 1,
+        verificationStatus: rule.verificationStatus,
+        warning: `Regla técnica en estado '${rule.verificationStatus}'. Solo reglas VERIFIED documentadas alimentan el cálculo determinista.`,
+      };
+    }
+
+    const intervalKm = isSevere && rule.severeUsageIntervalKm
+      ? rule.severeUsageIntervalKm
+      : (rule.intervalKm ?? null);
+
+    const intervalMonths = isSevere && rule.severeUsageIntervalMonths
+      ? rule.severeUsageIntervalMonths
+      : (rule.intervalMonths ?? null);
+
+    if (intervalKm == null && intervalMonths == null) {
+      return {
+        status: MaintenanceStatus.INSUFFICIENT_DATA,
+        category: (rule.category as ServiceCategory) ?? 'UNKNOWN',
+        nextDueMileage: null,
+        remainingKm: null,
+        nextDueDate: null,
+        dueReason: DueReason.NONE,
+        estimatedDaysRemaining: null,
+        confidence: EstimationConfidence.NONE,
+        intervalSource: rule.source ?? 'NONE',
+        sourceCitation: rule.sourceCitation,
+        warning: 'Rule documents neither mileage nor time intervals.',
+      };
+    }
 
     // 2. Find latest service in this category
     const relevantServices = (input.previousServices ?? [])
@@ -105,28 +172,47 @@ export class DeterministicMaintenanceEngine {
     if (lastService && vehicle.currentMileage < lastService.recordedMileage) {
       return {
         status: MaintenanceStatus.INSUFFICIENT_DATA,
-        category: rule.category,
+        category: rule.category as ServiceCategory,
         nextDueMileage: null,
         remainingKm: null,
         nextDueDate: null,
         dueReason: DueReason.NONE,
         estimatedDaysRemaining: null,
         confidence: EstimationConfidence.NONE,
-        intervalSource: rule.source,
+        intervalSource: rule.source ?? 'NONE',
         sourceCitation: rule.sourceCitation,
         warning: `Odometer inconsistency detected: Current mileage (${vehicle.currentMileage} km) is less than previously recorded service mileage (${lastService.recordedMileage} km). Inspection required.`,
       };
     }
 
-    // 4. Calculate Next Due Mileage
+    // 4. Calculate Base Mileage & Confidence
     let baseMileage = 0;
     let baseDate: Date;
     let confidence: EstimationConfidence;
 
+    // Check empirical odometer readings (requires at least 2 distinct readings with positive time and km)
+    let empiricalDailyRate: number | null = null;
+    if (input.odometerReadings && input.odometerReadings.length >= 2) {
+      const sortedReadings = [...input.odometerReadings].sort(
+        (a, b) => a.date.getTime() - b.date.getTime()
+      );
+      const oldest = sortedReadings[0]!;
+      const newest = sortedReadings[sortedReadings.length - 1]!;
+      const daysDiff = (newest.date.getTime() - oldest.date.getTime()) / (1000 * 60 * 60 * 24);
+      const kmDiff = newest.mileage - oldest.mileage;
+      if (daysDiff >= 7 && kmDiff > 0) {
+        empiricalDailyRate = kmDiff / daysDiff;
+      }
+    }
+
     if (lastService) {
       baseMileage = lastService.recordedMileage;
       baseDate = lastService.serviceDate;
-      confidence = usageConditions?.averageMonthlyKm ? EstimationConfidence.HIGH : EstimationConfidence.MEDIUM;
+      if (empiricalDailyRate !== null || usageConditions?.averageMonthlyKm) {
+        confidence = EstimationConfidence.HIGH;
+      } else {
+        confidence = EstimationConfidence.MEDIUM;
+      }
     } else {
       // No service recorded in category: calculate from vehicle manufacture date / initial 0 km
       baseMileage = 0;
@@ -134,25 +220,42 @@ export class DeterministicMaintenanceEngine {
       confidence = EstimationConfidence.LOW;
     }
 
-    const nextDueMileage = baseMileage + intervalKm;
-    const remainingKm = nextDueMileage - vehicle.currentMileage;
+    // 5. Calculate Next Due Mileage (if intervalKm documented)
+    let nextDueMileage: number | null = null;
+    let remainingKm: number | null = null;
+    if (intervalKm != null) {
+      nextDueMileage = baseMileage + intervalKm;
+      remainingKm = nextDueMileage - vehicle.currentMileage;
+    }
 
-    // 5. Calculate Next Due Date by Time Interval
-    const nextDueDate = new Date(baseDate.getTime());
-    nextDueDate.setMonth(nextDueDate.getMonth() + intervalMonths);
+    // 6. Calculate Calendar Due Date (if intervalMonths documented)
+    let calendarDueDate: Date | null = null;
+    let daysRemainingByCalendar: number | null = null;
+    if (intervalMonths != null) {
+      calendarDueDate = new Date(baseDate.getTime());
+      calendarDueDate.setMonth(calendarDueDate.getMonth() + intervalMonths);
+      daysRemainingByCalendar = Math.round(
+        (calendarDueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+      );
+    }
 
-    // 6. Calculate Remaining Days and Monthly Usage Projection
-    const monthlyRate = usageConditions?.averageMonthlyKm && usageConditions.averageMonthlyKm > 0
-      ? usageConditions.averageMonthlyKm
-      : this.DEFAULT_MONTHLY_KM;
+    // 7. Calculate Estimated Usage Date based on empirical rate or default monthly usage
+    const effectiveDailyRate = empiricalDailyRate !== null
+      ? empiricalDailyRate
+      : (usageConditions?.averageMonthlyKm && usageConditions.averageMonthlyKm > 0
+          ? usageConditions.averageMonthlyKm / 30.4375
+          : this.DEFAULT_MONTHLY_KM / 30.4375);
 
-    const dailyRate = monthlyRate / 30.4375;
-    const daysRemainingByMileage = remainingKm > 0 ? Math.round(remainingKm / dailyRate) : 0;
-    const daysRemainingByCalendar = Math.round((nextDueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    let daysRemainingByMileage: number | null = null;
+    let estimatedUsageDate: Date | null = null;
+    if (remainingKm != null) {
+      daysRemainingByMileage = remainingKm > 0 ? Math.round(remainingKm / effectiveDailyRate) : 0;
+      estimatedUsageDate = new Date(now.getTime() + daysRemainingByMileage * 24 * 60 * 60 * 1000);
+    }
 
-    // 7. Determine Due Reason & Maintenance Status
-    const isMileageDue = remainingKm <= 0;
-    const isCalendarDue = daysRemainingByCalendar <= 0;
+    // 8. Due Reason & Effective Due Date
+    const isMileageDue = remainingKm != null && remainingKm <= 0;
+    const isCalendarDue = daysRemainingByCalendar != null && daysRemainingByCalendar <= 0;
 
     let dueReason: DueReason = DueReason.NONE;
     if (isMileageDue && isCalendarDue) {
@@ -163,31 +266,61 @@ export class DeterministicMaintenanceEngine {
       dueReason = DueReason.DUE_BY_TIME;
     }
 
+    // Determine status:
+    // Status is based on whichever limit comes first
     let status: MaintenanceStatus = MaintenanceStatus.OK;
     if (isMileageDue || isCalendarDue) {
       status = MaintenanceStatus.OVERDUE;
-    } else if (remainingKm <= 200 || daysRemainingByCalendar <= 7) {
-      status = MaintenanceStatus.DUE_NOW;
-    } else if (remainingKm <= 1000 || daysRemainingByCalendar <= 30) {
-      status = MaintenanceStatus.UPCOMING_SOON;
+    } else {
+      const nearMileage = remainingKm != null && remainingKm <= 200;
+      const nearCalendar = daysRemainingByCalendar != null && daysRemainingByCalendar <= 7;
+      const upcomingMileage = remainingKm != null && remainingKm <= 1000;
+      const upcomingCalendar = daysRemainingByCalendar != null && daysRemainingByCalendar <= 30;
+
+      if (nearMileage || nearCalendar) {
+        status = MaintenanceStatus.DUE_NOW;
+      } else if (upcomingMileage || upcomingCalendar) {
+        status = MaintenanceStatus.UPCOMING_SOON;
+      }
     }
 
-    const effectiveDaysRemaining = Math.min(
-      Math.max(0, daysRemainingByCalendar),
-      Math.max(0, daysRemainingByMileage)
-    );
+    // Effective days remaining and effective nextDueDate
+    let effectiveDaysRemaining: number | null = null;
+    let nextDueDate: Date | null = null;
+
+    if (daysRemainingByCalendar != null && daysRemainingByMileage != null) {
+      effectiveDaysRemaining = Math.min(
+        Math.max(0, daysRemainingByCalendar),
+        Math.max(0, daysRemainingByMileage)
+      );
+      // Whichever occurs first between calendar date and estimated usage date
+      nextDueDate = calendarDueDate && estimatedUsageDate
+        ? (calendarDueDate.getTime() < estimatedUsageDate.getTime() ? calendarDueDate : estimatedUsageDate)
+        : (calendarDueDate ?? estimatedUsageDate);
+    } else if (daysRemainingByCalendar != null) {
+      effectiveDaysRemaining = Math.max(0, daysRemainingByCalendar);
+      nextDueDate = calendarDueDate;
+    } else if (daysRemainingByMileage != null) {
+      effectiveDaysRemaining = Math.max(0, daysRemainingByMileage);
+      nextDueDate = estimatedUsageDate;
+    }
 
     return {
       status,
-      category: rule.category,
+      category: rule.category as ServiceCategory,
       nextDueMileage,
       remainingKm,
       nextDueDate,
+      calendarDueDate,
+      estimatedUsageDate,
       dueReason,
       estimatedDaysRemaining: effectiveDaysRemaining,
       confidence,
-      intervalSource: rule.source,
+      intervalSource: rule.source ?? 'NONE',
       sourceCitation: rule.sourceCitation,
+      operation: rule.operation ?? 'REPLACE',
+      ruleVersion: rule.ruleVersion ?? 1,
+      verificationStatus: rule.verificationStatus ?? 'VERIFIED',
     };
   }
 }

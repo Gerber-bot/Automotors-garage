@@ -10,6 +10,14 @@ import {
   workOrderItems,
   maintenanceRecords,
   maintenanceIntervals,
+  kbManufacturers,
+  kbModels,
+  kbGenerations,
+  kbPowertrains,
+  kbDocumentSources,
+  kbConfigurations,
+  kbTechnicalSpecs,
+  kbMaintenanceRules,
 } from '@automotors/database';
 import { PasswordService } from '@automotors/security-foundation';
 
@@ -21,6 +29,7 @@ export interface SeedResult {
   workOrdersCount: number;
   maintenanceRecordsCount: number;
   intervalsCount: number;
+  kbConfigurationsCount?: number;
 }
 
 // Deterministic UUIDs for demo
@@ -58,6 +67,28 @@ export const DEMO_IDS = {
   RULE_LOGAN_BRAKES: '20000000-0000-4000-8000-000000000008',
   RULE_LOGAN_SPARK: '20000000-0000-4000-8000-000000000009',
   RULE_LOGAN_COOLANT: '20000000-0000-4000-8000-000000000010',
+  // Knowledge Base Demo IDs
+  KB_MFG_RENAULT: '50000000-0000-4000-8000-000000000001',
+  KB_MFG_VW: '50000000-0000-4000-8000-000000000002',
+  KB_MODEL_LOGAN: '51000000-0000-4000-8000-000000000001',
+  KB_MODEL_GOLF: '51000000-0000-4000-8000-000000000002',
+  KB_GEN_LOGAN_2: '52000000-0000-4000-8000-000000000001',
+  KB_GEN_GOLF_7: '52000000-0000-4000-8000-000000000002',
+  KB_PWR_H4M: '53000000-0000-4000-8000-000000000001',
+  KB_PWR_K7M: '53000000-0000-4000-8000-000000000002',
+  KB_PWR_EA211: '53000000-0000-4000-8000-000000000003',
+  KB_SRC_RENAULT: '54000000-0000-4000-8000-000000000001',
+  KB_SRC_VW: '54000000-0000-4000-8000-000000000002',
+  KB_CFG_LOGAN_H4M: '55000000-0000-4000-8000-000000000001',
+  KB_CFG_LOGAN_K7M: '55000000-0000-4000-8000-000000000002',
+  KB_CFG_GOLF_EA211: '55000000-0000-4000-8000-000000000003',
+  KB_RULE_LOGAN_OIL: '56000000-0000-4000-8000-000000000001',
+  KB_RULE_LOGAN_FILTERS: '56000000-0000-4000-8000-000000000002',
+  KB_RULE_LOGAN_BRAKES: '56000000-0000-4000-8000-000000000003',
+  KB_RULE_LOGAN_SPARKS: '56000000-0000-4000-8000-000000000004',
+  KB_RULE_LOGAN_COOLANT: '56000000-0000-4000-8000-000000000005',
+  KB_RULE_LOGAN_TIMING: '56000000-0000-4000-8000-000000000006',
+  KB_RULE_LOGAN_K7M_BELT: '56000000-0000-4000-8000-000000000007',
 };
 
 export class DemoSeeder {
@@ -207,6 +238,433 @@ export class DemoSeeder {
       ])
       .onConflictDoNothing();
 
+    // 4b. Knowledge Base: Manufacturers, Models, Generations, Powertrains, Sources, Configurations & Rules
+    await this.db
+      .insert(kbManufacturers)
+      .values([
+        {
+          id: DEMO_IDS.KB_MFG_RENAULT,
+          name: 'Renault',
+          country: 'Francia / Mercosur',
+          status: 'ACTIVE',
+        },
+        {
+          id: DEMO_IDS.KB_MFG_VW,
+          name: 'Volkswagen',
+          country: 'Alemania',
+          status: 'ACTIVE',
+        },
+      ])
+      .onConflictDoNothing();
+
+    await this.db
+      .insert(kbModels)
+      .values([
+        {
+          id: DEMO_IDS.KB_MODEL_LOGAN,
+          manufacturerId: DEMO_IDS.KB_MFG_RENAULT,
+          name: 'Logan',
+          status: 'ACTIVE',
+        },
+        {
+          id: DEMO_IDS.KB_MODEL_GOLF,
+          manufacturerId: DEMO_IDS.KB_MFG_VW,
+          name: 'Golf',
+          status: 'ACTIVE',
+        },
+      ])
+      .onConflictDoNothing();
+
+    await this.db
+      .insert(kbGenerations)
+      .values([
+        {
+          id: DEMO_IDS.KB_GEN_LOGAN_2,
+          modelId: DEMO_IDS.KB_MODEL_LOGAN,
+          generationName: 'Logan II Phase 2',
+          generationCode: 'L52',
+          startYear: 2019,
+          endYear: 2024,
+          market: 'AR',
+          verificationStatus: 'PENDING_VERIFICATION',
+        },
+        {
+          id: DEMO_IDS.KB_GEN_GOLF_7,
+          modelId: DEMO_IDS.KB_MODEL_GOLF,
+          generationName: 'Golf VII',
+          generationCode: '5G',
+          startYear: 2015,
+          endYear: 2021,
+          market: 'AR',
+          verificationStatus: 'PENDING_VERIFICATION',
+        },
+      ])
+      .onConflictDoNothing();
+
+    await this.db
+      .insert(kbPowertrains)
+      .values([
+        {
+          id: DEMO_IDS.KB_PWR_H4M,
+          manufacturerId: DEMO_IDS.KB_MFG_RENAULT,
+          engineCode: 'H4M',
+          family: 'SCe / HR16DE',
+          displacementCc: 1598,
+          displacementLiters: '1.6',
+          fuelType: 'GASOLINE',
+          valves: 16,
+          powerHp: 115,
+          timingMechanism: 'CADENA',
+          timingObservations:
+            'Arquitectura con cadena metálica bañada en aceite y correa auxiliar poli-V. Especificación e intervalos exactos pendientes de verificación con manual primario oficial de Renault Argentina.',
+          // oil_viscosity_oem holds only an OEM-verified value. Unverified candidates are kept
+          // in metadata with an explicit PENDING_VERIFICATION status and are never surfaced as official.
+          oilViscosityOem: null,
+          oilCapacityLiters: null,
+          verificationStatus: 'PENDING_VERIFICATION',
+          metadata: {
+            candidateOilViscosity: '5W-40 / 10W-40',
+            candidateOilViscosityStatus: 'PENDING_VERIFICATION',
+            candidateOilViscosityNote:
+              'Preliminary reference. Requires confirmation against the primary official Renault Argentina manual.',
+          },
+        },
+        {
+          id: DEMO_IDS.KB_PWR_K7M,
+          manufacturerId: DEMO_IDS.KB_MFG_RENAULT,
+          engineCode: 'K7M',
+          family: 'Hi-Torque 8v',
+          displacementCc: 1598,
+          displacementLiters: '1.6',
+          fuelType: 'GASOLINE',
+          valves: 8,
+          powerHp: 85,
+          timingMechanism: 'CORREA',
+          timingObservations:
+            'Arquitectura con correa dentada de distribución. Intervalo exacto de sustitución pendiente de verificación con manual primario oficial de Renault Argentina.',
+          oilViscosityOem: null,
+          oilCapacityLiters: null,
+          verificationStatus: 'PENDING_VERIFICATION',
+          metadata: {
+            candidateOilViscosity: '10W-40',
+            candidateOilViscosityStatus: 'PENDING_VERIFICATION',
+            candidateOilViscosityNote:
+              'Preliminary reference. Requires confirmation against the primary official Renault Argentina manual.',
+          },
+        },
+        {
+          id: DEMO_IDS.KB_PWR_EA211,
+          manufacturerId: DEMO_IDS.KB_MFG_VW,
+          engineCode: 'EA211',
+          family: 'TSI EA211',
+          displacementCc: 1395,
+          displacementLiters: '1.4',
+          fuelType: 'GASOLINE',
+          valves: 16,
+          powerHp: 150,
+          timingMechanism: 'CORREA',
+          timingObservations:
+            'Correa dentada en baño seco. Especificación pendiente de verificación documental primaria.',
+          oilViscosityOem: null,
+          oilCapacityLiters: null,
+          verificationStatus: 'PENDING_VERIFICATION',
+          metadata: {
+            candidateOilViscosityStatus: 'PENDING_VERIFICATION',
+            candidateOilViscosityNote: 'No verified OEM oil specification registered.',
+          },
+        },
+      ])
+      .onConflictDoNothing();
+
+    await this.db
+      .insert(kbDocumentSources)
+      .values([
+        {
+          id: DEMO_IDS.KB_SRC_RENAULT,
+          docType: 'PENDING_PRIMARY_SOURCE',
+          publisher: 'Renault Argentina S.A. (Sin documento primario adjunto en repositorio)',
+          title: 'Ficha en Revisión Técnica — Pendiente de Manual Físico / Carnet de Mantenimiento Renault Argentina',
+          market: 'AR',
+          versionOrDate: null,
+          documentReference: null,
+          pageOrSection: null,
+          consultationDate: new Date('2026-01-15T00:00:00Z'),
+          reviewStatus: 'PENDING_VERIFICATION',
+        },
+        {
+          id: DEMO_IDS.KB_SRC_VW,
+          docType: 'PENDING_PRIMARY_SOURCE',
+          publisher: 'Volkswagen Argentina S.A. (Sin documento primario adjunto en repositorio)',
+          title: 'Ficha en Revisión Técnica — Pendiente de Manual Físico Oficial Volkswagen',
+          market: 'AR',
+          versionOrDate: null,
+          documentReference: null,
+          pageOrSection: null,
+          consultationDate: new Date('2026-01-15T00:00:00Z'),
+          reviewStatus: 'PENDING_VERIFICATION',
+        },
+      ])
+      .onConflictDoNothing();
+
+    await this.db
+      .insert(kbConfigurations)
+      .values([
+        {
+          id: DEMO_IDS.KB_CFG_LOGAN_H4M,
+          modelId: DEMO_IDS.KB_MODEL_LOGAN,
+          generationId: DEMO_IDS.KB_GEN_LOGAN_2,
+          powertrainId: DEMO_IDS.KB_PWR_H4M,
+          commercialName: 'Renault Logan II 1.6 16v SCe Manual',
+          yearFrom: 2019,
+          yearTo: 2024,
+          market: 'AR',
+          transmission: 'MANUAL',
+          bodyStyle: 'Sedán',
+          trim: 'Zen / Intens',
+          sourceId: DEMO_IDS.KB_SRC_RENAULT,
+          verificationStatus: 'PENDING_VERIFICATION',
+        },
+        {
+          id: DEMO_IDS.KB_CFG_LOGAN_K7M,
+          modelId: DEMO_IDS.KB_MODEL_LOGAN,
+          generationId: DEMO_IDS.KB_GEN_LOGAN_2,
+          powertrainId: DEMO_IDS.KB_PWR_K7M,
+          commercialName: 'Renault Logan II 1.6 8v Manual',
+          yearFrom: 2016,
+          yearTo: 2020,
+          market: 'AR',
+          transmission: 'MANUAL',
+          bodyStyle: 'Sedán',
+          trim: 'Life / Zen',
+          sourceId: DEMO_IDS.KB_SRC_RENAULT,
+          verificationStatus: 'PENDING_VERIFICATION',
+        },
+        {
+          id: DEMO_IDS.KB_CFG_GOLF_EA211,
+          modelId: DEMO_IDS.KB_MODEL_GOLF,
+          generationId: DEMO_IDS.KB_GEN_GOLF_7,
+          powertrainId: DEMO_IDS.KB_PWR_EA211,
+          commercialName: 'Volkswagen Golf VII 1.4 TSI Highline DSG',
+          yearFrom: 2015,
+          yearTo: 2021,
+          market: 'AR',
+          transmission: 'AUTOMATIC',
+          bodyStyle: 'Hatchback',
+          trim: 'Highline',
+          sourceId: DEMO_IDS.KB_SRC_VW,
+          verificationStatus: 'PENDING_VERIFICATION',
+        },
+      ])
+      .onConflictDoNothing();
+
+    await this.db
+      .insert(kbTechnicalSpecs)
+      .values([
+        {
+          id: '57000000-0000-4000-8000-000000000001',
+          configurationId: DEMO_IDS.KB_CFG_LOGAN_H4M,
+          category: 'ENGINE_OIL',
+          specKey: 'oil_viscosity',
+          specValue: 'Pendiente de verificación documental (viscosidad y norma RN según manual de unidad)',
+          unit: 'SAE',
+          condition: 'ALL',
+          sourceId: DEMO_IDS.KB_SRC_RENAULT,
+          verificationStatus: 'PENDING_VERIFICATION',
+        },
+        {
+          id: '57000000-0000-4000-8000-000000000002',
+          configurationId: DEMO_IDS.KB_CFG_LOGAN_H4M,
+          category: 'ENGINE_OIL',
+          specKey: 'oil_capacity',
+          specValue: 'Pendiente de verificación documental (capacidad exacta con y sin filtro)',
+          unit: 'L',
+          condition: 'ALL',
+          sourceId: DEMO_IDS.KB_SRC_RENAULT,
+          verificationStatus: 'PENDING_VERIFICATION',
+        },
+        {
+          id: '57000000-0000-4000-8000-000000000003',
+          configurationId: DEMO_IDS.KB_CFG_LOGAN_H4M,
+          category: 'DISTRIBUTION',
+          specKey: 'timing_system',
+          specValue: 'Cadena metálica (H4M) — Pauta de inspección pendiente de verificación documental',
+          unit: null,
+          condition: 'ALL',
+          sourceId: DEMO_IDS.KB_SRC_RENAULT,
+          verificationStatus: 'PENDING_VERIFICATION',
+        },
+        {
+          id: '57000000-0000-4000-8000-000000000004',
+          configurationId: DEMO_IDS.KB_CFG_LOGAN_H4M,
+          category: 'COOLANT',
+          specKey: 'coolant_standard',
+          specValue: 'Pendiente de verificación documental (especificación de fluido refrigerante)',
+          unit: null,
+          condition: 'ALL',
+          sourceId: DEMO_IDS.KB_SRC_RENAULT,
+          verificationStatus: 'PENDING_VERIFICATION',
+        },
+        {
+          id: '57000000-0000-4000-8000-000000000005',
+          configurationId: DEMO_IDS.KB_CFG_LOGAN_H4M,
+          category: 'ACCESSORIES',
+          specKey: 'accessory_belt',
+          specValue: 'Correa poli-V de accesorios — Intervalo pendiente de verificación documental',
+          unit: null,
+          condition: 'ALL',
+          sourceId: DEMO_IDS.KB_SRC_RENAULT,
+          verificationStatus: 'PENDING_VERIFICATION',
+        },
+        {
+          id: '57000000-0000-4000-8000-000000000006',
+          configurationId: DEMO_IDS.KB_CFG_LOGAN_H4M,
+          category: 'SPARK_PLUGS',
+          specKey: 'spark_plug_model',
+          specValue: 'Pendiente de verificación documental (código de pieza y luz de electrodo)',
+          unit: null,
+          condition: 'ALL',
+          sourceId: DEMO_IDS.KB_SRC_RENAULT,
+          verificationStatus: 'PENDING_VERIFICATION',
+        },
+      ])
+      .onConflictDoNothing();
+
+    await this.db
+      .insert(kbMaintenanceRules)
+      .values([
+        {
+          id: DEMO_IDS.KB_RULE_LOGAN_OIL,
+          configurationId: DEMO_IDS.KB_CFG_LOGAN_H4M,
+          category: 'OIL_AND_FILTER',
+          operation: 'REPLACE',
+          title: 'Cambio de Aceite y Filtro de Aceite (En Revisión Documental)',
+          description:
+            'Pauta preliminar en estado PENDING_VERIFICATION. Excluida de recomendaciones verificadas hasta cotejo con manual oficial de Renault Argentina.',
+          intervalKm: 10000,
+          intervalMonths: 12,
+          severeIntervalKm: 7500,
+          severeIntervalMonths: 6,
+          conditions: 'Sujeto a confirmación de plan oficial Renault Argentina.',
+          sourceId: DEMO_IDS.KB_SRC_RENAULT,
+          verificationStatus: 'PENDING_VERIFICATION',
+          ruleVersion: 1,
+          isActive: true,
+          verifiedAt: null,
+          verificationNotes:
+            'Pendiente de respaldo documental primario oficial de Renault Argentina. Excluida del cálculo automático.',
+        },
+        {
+          id: DEMO_IDS.KB_RULE_LOGAN_FILTERS,
+          configurationId: DEMO_IDS.KB_CFG_LOGAN_H4M,
+          category: 'AIR_AND_CABIN_FILTERS',
+          operation: 'REPLACE',
+          title: 'Reemplazo de Filtro de Aire y Filtro de Habitáculo (En Revisión Documental)',
+          description:
+            'Pauta preliminar en estado PENDING_VERIFICATION. Excluida de recomendaciones verificadas.',
+          intervalKm: 10000,
+          intervalMonths: 12,
+          sourceId: DEMO_IDS.KB_SRC_RENAULT,
+          verificationStatus: 'PENDING_VERIFICATION',
+          ruleVersion: 1,
+          isActive: true,
+          verifiedAt: null,
+          verificationNotes:
+            'Pendiente de respaldo documental primario oficial de Renault Argentina. Excluida del cálculo automático.',
+        },
+        {
+          id: DEMO_IDS.KB_RULE_LOGAN_BRAKES,
+          configurationId: DEMO_IDS.KB_CFG_LOGAN_H4M,
+          category: 'BRAKES',
+          operation: 'INSPECT',
+          title: 'Inspección de Frenos y Fluido Hidráulico (En Revisión Documental)',
+          description:
+            'Pauta preliminar en estado PENDING_VERIFICATION. Excluida de recomendaciones verificadas.',
+          intervalKm: 30000,
+          intervalMonths: 24,
+          sourceId: DEMO_IDS.KB_SRC_RENAULT,
+          verificationStatus: 'PENDING_VERIFICATION',
+          ruleVersion: 1,
+          isActive: true,
+          verifiedAt: null,
+          verificationNotes:
+            'Pendiente de respaldo documental primario oficial de Renault Argentina. Excluida del cálculo automático.',
+        },
+        {
+          id: DEMO_IDS.KB_RULE_LOGAN_SPARKS,
+          configurationId: DEMO_IDS.KB_CFG_LOGAN_H4M,
+          category: 'SPARK_PLUGS',
+          operation: 'REPLACE',
+          title: 'Reemplazo de Juego de Bujías de Encendido (En Revisión Documental)',
+          description:
+            'Pauta preliminar en estado PENDING_VERIFICATION (sin código de bujía verificado documentalmente). Excluida de recomendaciones verificadas.',
+          intervalKm: 40000,
+          intervalMonths: 36,
+          sourceId: DEMO_IDS.KB_SRC_RENAULT,
+          verificationStatus: 'PENDING_VERIFICATION',
+          ruleVersion: 1,
+          isActive: true,
+          verifiedAt: null,
+          verificationNotes:
+            'Pendiente de respaldo documental primario oficial de Renault Argentina. Excluida del cálculo automático.',
+        },
+        {
+          id: DEMO_IDS.KB_RULE_LOGAN_COOLANT,
+          configurationId: DEMO_IDS.KB_CFG_LOGAN_H4M,
+          category: 'COOLANT',
+          operation: 'REPLACE',
+          title: 'Renovación de Líquido Refrigerante (En Revisión Documental)',
+          description:
+            'Pauta preliminar en estado PENDING_VERIFICATION. Excluida de recomendaciones verificadas.',
+          intervalKm: 60000,
+          intervalMonths: 48,
+          sourceId: DEMO_IDS.KB_SRC_RENAULT,
+          verificationStatus: 'PENDING_VERIFICATION',
+          ruleVersion: 1,
+          isActive: true,
+          verifiedAt: null,
+          verificationNotes:
+            'Pendiente de respaldo documental primario oficial de Renault Argentina. Excluida del cálculo automático.',
+        },
+        {
+          id: DEMO_IDS.KB_RULE_LOGAN_TIMING,
+          configurationId: DEMO_IDS.KB_CFG_LOGAN_H4M,
+          category: 'TIMING_BELT',
+          operation: 'INSPECT',
+          title: 'Control de Cadena de Distribución y Correa de Accesorios (En Revisión Documental)',
+          description:
+            'Pauta preliminar para variante H4M en estado PENDING_VERIFICATION. Excluida de recomendaciones verificadas hasta confirmación documental de fábrica.',
+          intervalKm: 60000,
+          intervalMonths: 48,
+          conditions: 'Pendiente de verificación documental de intervalo de correa auxiliar.',
+          sourceId: DEMO_IDS.KB_SRC_RENAULT,
+          verificationStatus: 'PENDING_VERIFICATION',
+          ruleVersion: 1,
+          isActive: true,
+          verifiedAt: null,
+          verificationNotes:
+            'Pendiente de respaldo documental primario oficial de Renault Argentina. Excluida del cálculo automático.',
+        },
+        {
+          id: DEMO_IDS.KB_RULE_LOGAN_K7M_BELT,
+          configurationId: DEMO_IDS.KB_CFG_LOGAN_K7M,
+          category: 'TIMING_BELT',
+          operation: 'REPLACE',
+          title: 'Reemplazo de Correa Dentada de Distribución K7M 8v (En Revisión Documental)',
+          description:
+            'Pauta preliminar para variante K7M 8v en estado PENDING_VERIFICATION. Excluida de recomendaciones verificadas hasta confirmación documental de fábrica.',
+          intervalKm: 60000,
+          intervalMonths: 48,
+          sourceId: DEMO_IDS.KB_SRC_RENAULT,
+          verificationStatus: 'PENDING_VERIFICATION',
+          ruleVersion: 1,
+          isActive: true,
+          verifiedAt: null,
+          verificationNotes:
+            'Pendiente de respaldo documental primario oficial de Renault Argentina. Excluida del cálculo automático.',
+        },
+      ])
+      .onConflictDoNothing();
+
     // 5. Vehicles (5 vehículos, destacando el Volkswagen Golf VII de demostración)
     await this.db
       .insert(vehicles)
@@ -221,6 +679,7 @@ export class DemoSeeder {
           engine: '1.4 TSI 150 CV (EA211)',
           fuelType: 'Nafta Premium',
           currentMileage: 58400,
+          configurationId: DEMO_IDS.KB_CFG_GOLF_EA211,
           metadata: { isDemoData: true, featured: true },
         },
         {
@@ -282,6 +741,7 @@ export class DemoSeeder {
           fuelType: 'Nafta Super',
           currentMileage: 46800,
           ownerUserId: DEMO_IDS.USER_OWNER_VALERIA,
+          configurationId: DEMO_IDS.KB_CFG_LOGAN_H4M,
           metadata: {
             isDemoData: true,
             isOwnerPortalVehicle: true,
@@ -321,7 +781,7 @@ export class DemoSeeder {
       ])
       .onConflictDoNothing();
 
-    // 6. Maintenance Intervals Documented
+    // 6. Maintenance Intervals (Synthetic Demo Fixtures only — Renault Logan 2020 is governed by KB in PENDING_VERIFICATION)
     await this.db
       .insert(maintenanceIntervals)
       .values([
@@ -334,7 +794,7 @@ export class DemoSeeder {
           category: 'OIL_AND_FILTER',
           intervalKm: 15000,
           intervalMonths: 12,
-          sourceCitation: 'Manual Plan de Mantenimiento VW Golf VII (pág. 24)',
+          sourceCitation: '[FIXTURE DEMO] Pauta de demostración para taller (sin documento OEM adjunto)',
         },
         {
           id: DEMO_IDS.RULE_VW_SPARK,
@@ -345,7 +805,7 @@ export class DemoSeeder {
           category: 'SPARK_PLUGS',
           intervalKm: 30000,
           intervalMonths: 24,
-          sourceCitation: 'Manual Oficial Volkswagen Service Plan Edición 2019',
+          sourceCitation: '[FIXTURE DEMO] Pauta de demostración para taller (sin documento OEM adjunto)',
         },
         {
           id: DEMO_IDS.RULE_TOYOTA_OIL,
@@ -356,7 +816,7 @@ export class DemoSeeder {
           category: 'OIL_AND_FILTER',
           intervalKm: 10000,
           intervalMonths: 12,
-          sourceCitation: 'Manual de Propietario Toyota Corolla 2022 (pág. 142)',
+          sourceCitation: '[FIXTURE DEMO] Pauta de demostración para taller (sin documento OEM adjunto)',
         },
         {
           id: DEMO_IDS.RULE_TOYOTA_BRAKES,
@@ -367,7 +827,7 @@ export class DemoSeeder {
           category: 'BRAKES',
           intervalKm: 30000,
           intervalMonths: 24,
-          sourceCitation: 'Manual de Mantenimiento Toyota Motor Corporation (pág. 150)',
+          sourceCitation: '[FIXTURE DEMO] Pauta de demostración para taller (sin documento OEM adjunto)',
         },
         {
           id: DEMO_IDS.RULE_FORD_OIL,
@@ -378,62 +838,7 @@ export class DemoSeeder {
           category: 'OIL_AND_FILTER',
           intervalKm: 10000,
           intervalMonths: 12,
-          sourceCitation: 'Guía de Mantenimiento Programado Ford Ranger (pág. 68)',
-        },
-        {
-          id: DEMO_IDS.RULE_LOGAN_OIL,
-          make: 'Renault',
-          model: 'Logan',
-          year: 2020,
-          engine: '1.6',
-          category: 'OIL_AND_FILTER',
-          intervalKm: 10000,
-          intervalMonths: 12,
-          sourceCitation: 'Manual de Mantenimiento Renault Argentina — Plan 10.000 km / 1 año',
-        },
-        {
-          id: DEMO_IDS.RULE_LOGAN_FILTERS,
-          make: 'Renault',
-          model: 'Logan',
-          year: 2020,
-          engine: '1.6',
-          category: 'AIR_AND_CABIN_FILTERS',
-          intervalKm: 10000,
-          intervalMonths: 12,
-          sourceCitation: 'Manual de Mantenimiento Renault Argentina — Sección Filtrado',
-        },
-        {
-          id: DEMO_IDS.RULE_LOGAN_BRAKES,
-          make: 'Renault',
-          model: 'Logan',
-          year: 2020,
-          engine: '1.6',
-          category: 'BRAKES',
-          intervalKm: 30000,
-          intervalMonths: 24,
-          sourceCitation: 'Guía Técnica de Seguridad Activa Renault — Sistema de Frenos',
-        },
-        {
-          id: DEMO_IDS.RULE_LOGAN_SPARK,
-          make: 'Renault',
-          model: 'Logan',
-          year: 2020,
-          engine: '1.6',
-          category: 'SPARK_PLUGS',
-          intervalKm: 40000,
-          intervalMonths: 36,
-          sourceCitation: 'Plan de Mantenimiento Renault 1.6 16v — Sistema de Encendido',
-        },
-        {
-          id: DEMO_IDS.RULE_LOGAN_COOLANT,
-          make: 'Renault',
-          model: 'Logan',
-          year: 2020,
-          engine: '1.6',
-          category: 'COOLANT',
-          intervalKm: 60000,
-          intervalMonths: 48,
-          sourceCitation: 'Especificación Técnica Renault Glaceol RX Type D',
+          sourceCitation: '[FIXTURE DEMO] Pauta de demostración para taller (sin documento OEM adjunto)',
         },
       ])
       .onConflictDoNothing();
@@ -687,6 +1092,7 @@ export class DemoSeeder {
       workOrdersCount: 4,
       maintenanceRecordsCount: 4,
       intervalsCount: 10,
+      kbConfigurationsCount: 3,
     };
   }
 }

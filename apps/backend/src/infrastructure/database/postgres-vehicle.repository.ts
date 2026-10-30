@@ -27,6 +27,7 @@ export class PostgresVehicleRepository implements IVehicleRepository {
         currentMileage: row.currentMileage,
         technicalSpecs: (row.metadata as Record<string, unknown>) ?? undefined,
         ownerId: row.ownerUserId ?? undefined,
+        configurationId: row.configurationId ?? undefined,
       },
       row.id
     );
@@ -94,6 +95,7 @@ export class PostgresVehicleRepository implements IVehicleRepository {
         fuelType: vehicle.fuelType ?? null,
         currentMileage: vehicle.currentMileage,
         ownerUserId: vehicle.ownerId ?? null,
+        configurationId: vehicle.configurationId ?? null,
         metadata: vehicle.technicalSpecs ?? {},
         updatedAt: new Date(),
       })
@@ -109,6 +111,7 @@ export class PostgresVehicleRepository implements IVehicleRepository {
           fuelType: vehicle.fuelType ?? null,
           currentMileage: vehicle.currentMileage,
           ownerUserId: vehicle.ownerId ?? null,
+          configurationId: vehicle.configurationId ?? null,
           metadata: vehicle.technicalSpecs ?? {},
           updatedAt: new Date(),
         },

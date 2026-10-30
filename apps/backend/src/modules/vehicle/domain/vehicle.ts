@@ -21,6 +21,7 @@ export interface VehicleProps {
   currentMileage: number;
   technicalSpecs?: Record<string, unknown>;
   ownerId?: string;
+  configurationId?: string;
 }
 
 export class Vehicle extends Entity<VehicleProps> {
@@ -97,6 +98,23 @@ export class Vehicle extends Entity<VehicleProps> {
 
   public get ownerId(): string | undefined {
     return this.props.ownerId;
+  }
+
+  public get configurationId(): string | undefined {
+    return this.props.configurationId;
+  }
+
+  public setConfigurationId(configurationId: string | undefined): void {
+    this.props.configurationId = configurationId;
+    this.incrementVersion();
+  }
+
+  public updateTechnicalSpecs(specs: Record<string, unknown>): void {
+    this.props.technicalSpecs = {
+      ...(this.props.technicalSpecs ?? {}),
+      ...specs,
+    };
+    this.incrementVersion();
   }
 
   /**

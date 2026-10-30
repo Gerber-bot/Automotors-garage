@@ -261,17 +261,22 @@ describe('Milestone 12: Mi Automotors — Owner Portal Foundation, Security & De
   // --------------------------------------------------------------------------
   // 8. MOTOR DE MANTENIMIENTO DETERMINÍSTICO Y REGLA DE DATOS INSUFICIENTES
   // --------------------------------------------------------------------------
-  it('8. Predicciones Determinísticas: Calcula próximo cambio de aceite y reporta datos insuficientes sin inventar intervalos', async () => {
+  it('8. Predicciones Determinísticas: Excluye reglas en PENDING_VERIFICATION del Renault Logan 2020 y reporta datos insuficientes sin inventar intervalos', async () => {
     const preds = await ownerAClient.getOwnerVehiclePredictions(ownerAVehicleId);
     assert.ok(preds.predictions.length >= 6);
 
-    // Oil & filter was performed at 35,250 km; Logan interval is 10,000 km -> next due at 45,250 km
-    // Current mileage is 39,500 km -> remainingKm = 5,750 km, status = OK
+    // Oil & filter was performed at 35,250 km; because Renault Logan 2020 rules are in PENDING_VERIFICATION
+    // (awaiting primary official Renault Argentina documentation), it is excluded from verified calculations
+    // while preserving lastServiceMileage = 35,250 km.
     const oilPred = preds.predictions.find((p) => p.category === 'OIL_AND_FILTER');
     assert.ok(oilPred);
-    assert.equal(oilPred.nextDueMileage, 45250);
-    assert.equal(oilPred.remainingKm, 5750);
-    assert.equal(oilPred.status, 'OK');
+    assert.equal(oilPred.lastServiceMileage, 35250);
+    assert.equal(oilPred.nextDueMileage, null);
+    assert.equal(oilPred.status, 'INSUFFICIENT_DATA');
+    assert.equal(
+      oilPred.message,
+      'Necesitamos más información para estimar este mantenimiento'
+    );
 
     // Timing belt on chain-driven Logan 1.6 2020 (unconfirmed H4M/HR16) has no replacement rule -> INSUFFICIENT_DATA
     const timingPred = preds.predictions.find((p) => p.category === 'TIMING_BELT');

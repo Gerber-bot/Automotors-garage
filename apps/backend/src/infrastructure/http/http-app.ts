@@ -10,6 +10,7 @@ import {
   SessionRevokedError,
   TokenExpiredOrInvalidError,
   CrossTenantViolationError,
+  PrivilegeEscalationError,
   SecurityHeadersService,
   PasswordService,
 } from '@automotors/security-foundation';
@@ -44,7 +45,7 @@ import {
 import { Vehicle } from '../../modules/vehicle/domain/vehicle.ts';
 import { MaintenanceRecord } from '../../modules/maintenance-history/domain/maintenance-record.ts';
 import { VerificationLevel } from '../../modules/maintenance-history/domain/verification-level.ts';
-import { maintenanceIntervals } from '@automotors/database';
+import { maintenanceIntervals, PostgresKnowledgeBaseRepository } from '@automotors/database';
 import { ilike, and } from 'drizzle-orm';
 import { SummarizeHistoryUseCase } from '../../modules/maintenance-intelligence/application/summarize-history.usecase.ts';
 import { ExplainMaintenanceUseCase } from '../../modules/maintenance-intelligence/application/explain-maintenance.usecase.ts';
@@ -55,6 +56,7 @@ import type { StructuredExtractionPort } from '../../modules/maintenance-intelli
 import { DemoSeeder } from '../database/demo-seed.ts';
 import { getDemoDashboardHtml } from './demo-web-ui.ts';
 import { ObdDiagnosticsService, ObdError, ObdSecurityError } from '@automotors/obd-core';
+import { TechnicalIdentificationEngine } from '../../modules/maintenance-intelligence/domain/technical-identification-engine.ts';
 
 export interface HttpAppDependencies {
   db: DatabaseInstance;
@@ -78,6 +80,8 @@ export class HttpApp {
   private readonly historyRepo: PostgresMaintenanceHistoryRepository;
   private readonly userRepo: PostgresUserRepository;
   private readonly unitOfWork: PostgresUnitOfWork;
+  private readonly kbRepo: PostgresKnowledgeBaseRepository;
+  private readonly techIdentificationEngine: TechnicalIdentificationEngine;
 
   // Use cases
   private readonly createVehicleUseCase: CreateVehicleUseCase;
@@ -92,9 +96,26 @@ export class HttpApp {
   private readonly obd2UseCase: InterpretObd2UseCase;
   private readonly obdService: ObdDiagnosticsService;
 
+  /**
+   * Resolves the JWT signing secret from the environment.
+   * SECURITY: a secret committed to the repository must never sign tokens outside local
+   * development/tests; otherwise anyone could forge tokens (including platform SUPER_ADMIN).
+   */
+  private static resolveJwtSecret(): string {
+    const configured = process.env.JWT_SECRET;
+    if (configured && configured.length >= 32) {
+      return configured;
+    }
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('JWT_SECRET must be configured with at least 32 characters in production.');
+    }
+    // Development/test-only fallback. Never valid in production (guarded above).
+    return 'production-grade-super-secret-key-automotors-32-chars';
+  }
+
   constructor(deps: HttpAppDependencies) {
     this.db = deps.db;
-    const jwtSecret = deps.jwtSecret ?? 'production-grade-super-secret-key-automotors-32-chars';
+    const jwtSecret = deps.jwtSecret ?? HttpApp.resolveJwtSecret();
     this.tokenService = new TokenService(jwtSecret, 3600);
     this.passwordService = new PasswordService();
 
@@ -112,6 +133,8 @@ export class HttpApp {
     this.routeRegistry.registerPublicRoute('/api/v1/auth/register', 'POST');
     this.routeRegistry.registerPublicRoute('/api/v1/demo/seed', 'POST');
     this.routeRegistry.registerPublicRoute('/api/v1/vehicles/:id/passport', 'GET'); // Public view sanitized
+    this.routeRegistry.registerPublicRoute('/api/v1/kb/*', 'GET');
+    this.routeRegistry.registerPublicRoute('/api/v1/kb/identify', 'POST');
 
     this.authGuard = new AuthenticationGuard(this.tokenService, this.sessionService, this.routeRegistry);
     this.tenantGuard = new TenantGuard();
@@ -122,6 +145,8 @@ export class HttpApp {
     this.historyRepo = new PostgresMaintenanceHistoryRepository(this.db);
     this.userRepo = new PostgresUserRepository(this.db);
     this.unitOfWork = new PostgresUnitOfWork(this.db);
+    this.kbRepo = new PostgresKnowledgeBaseRepository(this.db);
+    this.techIdentificationEngine = new TechnicalIdentificationEngine(this.kbRepo);
 
     this.createVehicleUseCase = new CreateVehicleUseCase(this.vehicleRepo);
     this.createWorkOrderUseCase = new CreateWorkOrderUseCase(
@@ -564,6 +589,142 @@ export class HttpApp {
         return this.sendJson(res, 200, { message: `Session '${targetSessionId}' revoked successfully.` }, requestId);
       }
 
+      // =======================================================================
+      // KNOWLEDGE BASE — AUTOMOTORS VEHICLE KNOWLEDGE BASE
+      // =======================================================================
+      // GET /api/v1/kb/manufacturers
+      if (pathname === '/api/v1/kb/manufacturers' && method === 'GET') {
+        const list = await this.kbRepo.listManufacturers();
+        return this.sendJson(res, 200, list, requestId);
+      }
+
+      // GET /api/v1/kb/models
+      if (pathname === '/api/v1/kb/models' && method === 'GET') {
+        const manufacturerId = parsedUrl.searchParams.get('manufacturerId') ?? undefined;
+        const list = await this.kbRepo.listModels(manufacturerId);
+        return this.sendJson(res, 200, list, requestId);
+      }
+
+      // GET /api/v1/kb/generations
+      if (pathname === '/api/v1/kb/generations' && method === 'GET') {
+        const modelId = parsedUrl.searchParams.get('modelId');
+        if (!modelId) {
+          return this.sendJson(res, 400, { error: 'modelId is required.' }, requestId);
+        }
+        const list = await this.kbRepo.listGenerations(modelId);
+        return this.sendJson(res, 200, list, requestId);
+      }
+
+      // GET /api/v1/kb/configurations
+      if (pathname === '/api/v1/kb/configurations' && method === 'GET') {
+        const make = parsedUrl.searchParams.get('make') ?? undefined;
+        const model = parsedUrl.searchParams.get('model') ?? undefined;
+        const year = parsedUrl.searchParams.get('year') ? Number(parsedUrl.searchParams.get('year')) : undefined;
+        const market = parsedUrl.searchParams.get('market') ?? undefined;
+        const list = await this.kbRepo.searchConfigurations({ make, model, year, market });
+        return this.sendJson(res, 200, list, requestId);
+      }
+
+      // GET /api/v1/kb/configurations/:id/specs
+      const kbSpecsMatch = pathname.match(/^\/api\/v1\/kb\/configurations\/([^/]+)\/specs$/);
+      if (kbSpecsMatch && method === 'GET') {
+        const configId = kbSpecsMatch[1]!;
+        const specs = await this.kbRepo.listTechnicalSpecs(configId);
+        return this.sendJson(res, 200, specs, requestId);
+      }
+
+      // GET /api/v1/kb/configurations/:id/rules
+      const kbRulesMatch = pathname.match(/^\/api\/v1\/kb\/configurations\/([^/]+)\/rules$/);
+      if (kbRulesMatch && method === 'GET') {
+        const configId = kbRulesMatch[1]!;
+        const onlyVerified = parsedUrl.searchParams.get('verified') === 'true';
+        const rules = await this.kbRepo.listRulesByConfiguration(configId, { onlyActive: true, onlyVerified });
+        return this.sendJson(res, 200, rules, requestId);
+      }
+
+      // GET /api/v1/kb/configurations/:id
+      const kbConfigDetailMatch = pathname.match(/^\/api\/v1\/kb\/configurations\/([^/]+)$/);
+      if (kbConfigDetailMatch && method === 'GET') {
+        const configId = kbConfigDetailMatch[1]!;
+        const config = await this.kbRepo.findConfigurationById(configId);
+        if (!config) {
+          return this.sendJson(res, 404, { error: 'Configuration not found.' }, requestId);
+        }
+        const specs = await this.kbRepo.listTechnicalSpecs(configId);
+        const rules = await this.kbRepo.listRulesByConfiguration(configId, { onlyActive: true });
+        return this.sendJson(res, 200, { ...config, specs, rules }, requestId);
+      }
+
+      // POST /api/v1/kb/identify
+      if (pathname === '/api/v1/kb/identify' && method === 'POST') {
+        const body = await this.parseBody(req);
+        const result = await this.techIdentificationEngine.identify(body as any);
+        return this.sendJson(res, 200, result, requestId);
+      }
+
+      // POST /api/v1/kb/rules/:id/verify (Restricted/Authenticated - ONLY PLATFORM SUPER_ADMIN)
+      const kbVerifyMatch = pathname.match(/^\/api\/v1\/kb\/rules\/([^/]+)\/verify$/);
+      if (kbVerifyMatch && method === 'POST') {
+        const principal = reqContext.principal;
+        if (!principal) {
+          return this.sendJson(res, 401, { error: 'Authentication required.' }, requestId);
+        }
+        const isSuperAdmin =
+          principal.isPlatformSuperAdmin === true && principal.activeTenantId === null;
+        if (!isSuperAdmin) {
+          return this.sendJson(
+            res,
+            403,
+            { error: 'Forbidden: Solamente administradores globales (SUPER_ADMIN) están autorizados a verificar reglas del catálogo técnico compartido.' },
+            requestId
+          );
+        }
+        const ruleId = kbVerifyMatch[1]!;
+        const body = await this.parseBody(req);
+        try {
+          const verified = await this.kbRepo.verifyRule({
+            ruleId,
+            verifierUserId: principal.id,
+            notes: body.notes,
+          });
+          return this.sendJson(res, 200, verified, requestId);
+        } catch (err: any) {
+          return this.sendJson(res, 404, { error: err.message }, requestId);
+        }
+      }
+
+      // POST /api/v1/kb/rules/:id/revision (Restricted/Authenticated - ONLY PLATFORM SUPER_ADMIN)
+      const kbRevisionMatch = pathname.match(/^\/api\/v1\/kb\/rules\/([^/]+)\/revision$/);
+      if (kbRevisionMatch && method === 'POST') {
+        const principal = reqContext.principal;
+        if (!principal) {
+          return this.sendJson(res, 401, { error: 'Authentication required.' }, requestId);
+        }
+        const isSuperAdmin =
+          principal.isPlatformSuperAdmin === true && principal.activeTenantId === null;
+        if (!isSuperAdmin) {
+          return this.sendJson(
+            res,
+            403,
+            { error: 'Forbidden: Solamente administradores globales (SUPER_ADMIN) están autorizados a crear revisiones de reglas técnicas del catálogo compartido.' },
+            requestId
+          );
+        }
+        const ruleId = kbRevisionMatch[1]!;
+        const body = await this.parseBody(req);
+        try {
+          const newRev = await this.kbRepo.createRuleRevision({
+            ruleId,
+            changes: body.changes ?? body,
+            actorUserId: principal.id,
+            autoVerify: body.autoVerify ?? false,
+          });
+          return this.sendJson(res, 201, newRev, requestId);
+        } catch (err: any) {
+          return this.sendJson(res, 400, { error: err.message }, requestId);
+        }
+      }
+
       // VEHICLES: PASSPORT (Public or Authenticated View)
       const passportMatch = pathname.match(/^\/api\/v1\/vehicles\/([^/]+)\/passport$/);
       if (passportMatch && method === 'GET') {
@@ -620,6 +781,7 @@ export class HttpApp {
             fuelType: v.fuelType ?? 'Nafta Super',
             currentMileage: v.currentMileage,
             ownerUserId: v.ownerId ?? principal.id,
+            configurationId: v.configurationId ?? null,
             transmission:
               (specs.transmission as string) ??
               kbProfile?.transmission ??
@@ -1001,6 +1163,49 @@ export class HttpApp {
           return this.sendJson(res, 200, summaryResult.getValue(), requestId);
         }
 
+        // OWNER VEHICLE TECHNICAL CONFIGURATION BINDING (/api/v1/owner/vehicles/:id/configuration)
+        const ownerConfigBindMatch = pathname.match(/^\/api\/v1\/owner\/vehicles\/([^/]+)\/configuration$/);
+        if (ownerConfigBindMatch && method === 'POST') {
+          const vehicleId = ownerConfigBindMatch[1]!;
+          if (!uuidRegex.test(vehicleId)) {
+            return this.sendJson(res, 404, { error: 'Vehículo no encontrado.' }, requestId);
+          }
+          const vehicle = await this.vehicleRepo.findById(vehicleId);
+          if (!vehicle) {
+            return this.sendJson(res, 404, { error: 'Vehículo no encontrado.' }, requestId);
+          }
+          if (vehicle.ownerId !== principal.id) {
+            return this.sendJson(
+              res,
+              403,
+              { error: 'Acceso denegado: no sos el propietario autorizado de este vehículo.' },
+              requestId
+            );
+          }
+          const body = await this.parseBody(req);
+          if (!body.configurationId) {
+            return this.sendJson(res, 400, { error: 'El campo configurationId es obligatorio.' }, requestId);
+          }
+          const config = await this.kbRepo.findConfigurationById(body.configurationId);
+          if (!config) {
+            return this.sendJson(res, 404, { error: 'Configuración técnica no encontrada en el catálogo.' }, requestId);
+          }
+
+          vehicle.setConfigurationId(config.id);
+          const currentSpecs = (vehicle.technicalSpecs ?? {}) as Record<string, unknown>;
+          vehicle.updateTechnicalSpecs({
+            ...currentSpecs,
+            configurationId: config.id,
+            commercialName: config.commercialName,
+            transmission: config.transmission,
+            distributionType: config.powertrain?.timingMechanism ?? 'DESCONOCIDO',
+            exactEngineCode: config.powertrain?.engineCode ?? 'PENDIENTE_CONFIRMACION',
+            isDocumentarilyVerified: config.verificationStatus === 'VERIFIED',
+          });
+          await this.vehicleRepo.save(vehicle);
+          return this.sendJson(res, 200, serializeOwnerVehicle(vehicle), requestId);
+        }
+
         // OWNER MANUAL MAINTENANCE REGISTRATION (/api/v1/owner/vehicles/:id/maintenance)
         const ownerMaintMatch = pathname.match(/^\/api\/v1\/owner\/vehicles\/([^/]+)\/maintenance$/);
         if (ownerMaintMatch && method === 'POST') {
@@ -1307,6 +1512,27 @@ export class HttpApp {
               ruleMap.set(r.category, r);
             }
           }
+          if (vehicle.configurationId) {
+            const kbRules = await this.kbRepo.listRulesByConfiguration(vehicle.configurationId, {
+              onlyActive: true,
+              onlyVerified: true,
+            });
+            for (const r of kbRules) {
+              const cat = VehicleKnowledgeBase.normalizeCategory(r.category);
+              ruleMap.set(cat, {
+                id: r.id,
+                category: cat,
+                title: r.title,
+                intervalKm: r.intervalKm ?? 10000,
+                intervalMonths: r.intervalMonths ?? 12,
+                source: (r.sourceTitle as any) ?? IntervalSource.OEM_MANUAL,
+                sourceCitation: r.sourceReference ?? r.sourceTitle ?? 'Manual Oficial OEM',
+                severeUsageIntervalKm: r.severeIntervalKm ?? undefined,
+                severeUsageIntervalMonths: r.severeIntervalMonths ?? undefined,
+                verificationStatus: 'VERIFIED',
+              });
+            }
+          }
           for (const row of dbIntervalRows) {
             const cat = VehicleKnowledgeBase.normalizeCategory(row.category);
             if (!ruleMap.has(cat) && row.intervalKm && row.intervalMonths) {
@@ -1318,6 +1544,7 @@ export class HttpApp {
                 intervalMonths: Number(row.intervalMonths),
                 source: IntervalSource.OEM_MANUAL,
                 sourceCitation: row.sourceCitation,
+                verificationStatus: 'VERIFIED',
               });
             }
           }
@@ -1362,6 +1589,7 @@ export class HttpApp {
               },
               rule,
               previousServices,
+              odometerReadings: records.map((r) => ({ date: r.serviceDate, mileage: r.recordedMileage })),
               usageConditions: estimatedMonthlyKm ? { averageMonthlyKm: estimatedMonthlyKm } : undefined,
             });
 
@@ -1434,6 +1662,26 @@ export class HttpApp {
           const records = await this.historyRepo.findByVehicleId(vehicle.id);
           const kbProfile = VehicleKnowledgeBase.findProfile({ make: vehicle.make, model: vehicle.model, year: vehicle.year });
           let rule = kbProfile?.intervals.find((r) => r.category === normalizedCat) ?? null;
+
+          if (vehicle.configurationId) {
+            const kbRules = await this.kbRepo.listRulesByConfiguration(vehicle.configurationId, {
+              onlyActive: true,
+              onlyVerified: true,
+            });
+            const matchedKbRule = kbRules.find((r) => VehicleKnowledgeBase.normalizeCategory(r.category) === normalizedCat);
+            if (matchedKbRule && matchedKbRule.intervalKm && matchedKbRule.intervalMonths) {
+              rule = {
+                id: matchedKbRule.id,
+                category: normalizedCat,
+                title: matchedKbRule.title,
+                intervalKm: matchedKbRule.intervalKm,
+                intervalMonths: matchedKbRule.intervalMonths,
+                source: (matchedKbRule.sourceTitle as any) ?? IntervalSource.OEM_MANUAL,
+                sourceCitation: matchedKbRule.sourceReference ?? matchedKbRule.sourceTitle ?? 'Manual Oficial OEM',
+                verificationStatus: 'VERIFIED',
+              };
+            }
+          }
 
           if (!rule) {
             const dbIntervalRows = await this.db
@@ -1596,9 +1844,57 @@ export class HttpApp {
             engine: vehicle.engine,
             fuelType: vehicle.fuelType,
             currentMileage: vehicle.currentMileage,
+            configurationId: vehicle.configurationId ?? null,
+            technicalSpecs: vehicle.technicalSpecs ?? {},
           },
           requestId
         );
+      }
+
+      // WORKSHOP VEHICLE CONFIGURATION BINDING
+      const workshopConfigBindMatch = pathname.match(/^\/api\/v1\/vehicles\/([^/]+)\/configuration$/);
+      if (workshopConfigBindMatch && method === 'POST') {
+        const vehicleId = workshopConfigBindMatch[1]!;
+        const vehicle = await this.vehicleRepo.findById(vehicleId);
+        if (!vehicle) {
+          return this.sendJson(res, 404, { error: 'Vehículo no encontrado.' }, requestId);
+        }
+        if (vehicle.ownerId) {
+          return this.sendJson(
+            res,
+            403,
+            { error: 'Access forbidden: private owner vehicle has not shared access with this workshop.' },
+            requestId
+          );
+        }
+        const body = await this.parseBody(req);
+        if (!body.configurationId) {
+          return this.sendJson(res, 400, { error: 'configurationId is required.' }, requestId);
+        }
+        const config = await this.kbRepo.findConfigurationById(body.configurationId);
+        if (!config) {
+          return this.sendJson(res, 404, { error: 'Configuración técnica no encontrada.' }, requestId);
+        }
+
+        vehicle.setConfigurationId(config.id);
+        const currentSpecs = (vehicle.technicalSpecs ?? {}) as Record<string, unknown>;
+        vehicle.updateTechnicalSpecs({
+          ...currentSpecs,
+          configurationId: config.id,
+          commercialName: config.commercialName,
+          transmission: config.transmission,
+          distributionType: config.powertrain?.timingMechanism ?? 'DESCONOCIDO',
+          exactEngineCode: config.powertrain?.engineCode ?? 'PENDIENTE_CONFIRMACION',
+        });
+        await this.vehicleRepo.save(vehicle);
+        return this.sendJson(res, 200, {
+          id: vehicle.id,
+          make: vehicle.make,
+          model: vehicle.model,
+          year: vehicle.year,
+          configurationId: vehicle.configurationId,
+          technicalSpecs: vehicle.technicalSpecs,
+        }, requestId);
       }
 
 
@@ -1849,6 +2145,25 @@ export class HttpApp {
         const kbProfile = VehicleKnowledgeBase.findProfile({ make: vehicle.make, model: vehicle.model, year: vehicle.year });
         let rule = kbProfile?.intervals.find((r) => r.category === normalizedCat) ?? null;
 
+        if (vehicle.configurationId) {
+          const kbRules = await this.kbRepo.listRulesByConfiguration(vehicle.configurationId, {
+            onlyActive: true,
+            onlyVerified: true,
+          });
+          const matchedKbRule = kbRules.find((r) => VehicleKnowledgeBase.normalizeCategory(r.category) === normalizedCat);
+          if (matchedKbRule && matchedKbRule.intervalKm && matchedKbRule.intervalMonths) {
+            rule = {
+              id: matchedKbRule.id,
+              category: normalizedCat,
+              title: matchedKbRule.title,
+              intervalKm: matchedKbRule.intervalKm,
+              intervalMonths: matchedKbRule.intervalMonths,
+              source: (matchedKbRule.sourceTitle as any) ?? IntervalSource.OEM_MANUAL,
+              sourceCitation: matchedKbRule.sourceReference ?? matchedKbRule.sourceTitle ?? 'Manual Oficial OEM',
+            };
+          }
+        }
+
         if (!rule) {
           const dbIntervalRows = await this.db
             .select()
@@ -2054,6 +2369,9 @@ export class HttpApp {
       }
       if (err instanceof CrossTenantViolationError) {
         return this.sendJson(res, 403, { error: 'Access forbidden: cross-tenant access prohibited.' }, requestId);
+      }
+      if (err instanceof PrivilegeEscalationError) {
+        return this.sendJson(res, 403, { error: err.message }, requestId);
       }
       if (err instanceof ObdSecurityError) {
         return this.sendJson(res, 403, { error: err.message }, requestId);

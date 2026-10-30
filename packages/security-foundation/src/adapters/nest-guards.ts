@@ -1,4 +1,4 @@
-import { AuthenticationRequiredError } from '../domain/errors.ts';
+import { AuthenticationRequiredError, PrivilegeEscalationError } from '../domain/errors.ts';
 import { AuthenticatedPrincipal } from '../domain/principal.ts';
 import { TokenService } from '../services/token.service.ts';
 import { SessionService } from '../services/session.service.ts';
@@ -15,13 +15,29 @@ export interface HttpRequestContext {
 
 export class RoutePrivacyRegistry {
   private readonly publicRoutes = new Set<string>();
+  private readonly publicPrefixes: Array<{ prefix: string; method: string }> = [];
 
   public registerPublicRoute(path: string, method: string = 'GET'): void {
-    this.publicRoutes.add(`${method.toUpperCase()} ${path.toLowerCase()}`);
+    if (path.endsWith('*')) {
+      this.publicPrefixes.push({
+        prefix: path.slice(0, -1).toLowerCase(),
+        method: method.toUpperCase(),
+      });
+    } else {
+      this.publicRoutes.add(`${method.toUpperCase()} ${path.toLowerCase()}`);
+    }
   }
 
   public isPublic(path: string, method: string): boolean {
-    return this.publicRoutes.has(`${method.toUpperCase()} ${path.toLowerCase()}`);
+    const key = `${method.toUpperCase()} ${path.toLowerCase()}`;
+    if (this.publicRoutes.has(key)) {
+      return true;
+    }
+    const m = method.toUpperCase();
+    const p = path.toLowerCase();
+    return this.publicPrefixes.some(
+      (entry) => (entry.method === m || entry.method === '*') && p.startsWith(entry.prefix)
+    );
   }
 }
 
@@ -55,15 +71,22 @@ export class AuthenticationGuard {
 
     this.sessionService.assertActive(payload.sessionId);
 
+    const isPlatformSuperAdmin = payload.role === 'SUPER_ADMIN' && payload.tenantId === null;
+    if (payload.role === 'SUPER_ADMIN' && payload.tenantId !== null) {
+      throw new PrivilegeEscalationError('Forbidden: SUPER_ADMIN is a platform role and cannot be scoped to a tenant.');
+    }
+    const effectiveRole = payload.role as Role;
+
     req.principal = new AuthenticatedPrincipal({
       id: payload.sub,
       email: payload.email,
+      isPlatformSuperAdmin,
       activeTenantId: payload.tenantId,
       sessionId: payload.sessionId,
       memberships: [
         {
           tenantId: payload.tenantId ?? '',
-          role: payload.role as Role,
+          role: effectiveRole,
           status: 'active',
           customPermissions: payload.permissions as readonly Permission[],
         },
@@ -82,15 +105,21 @@ export class AuthenticationGuard {
           const token = authHeader.substring(7);
           const payload = this.tokenService.verifyAccessToken(token);
           await this.sessionService.assertActivePersisted(payload.sessionId);
+          const isPlatformSuperAdmin = payload.role === 'SUPER_ADMIN' && payload.tenantId === null;
+          if (payload.role === 'SUPER_ADMIN' && payload.tenantId !== null) {
+            throw new PrivilegeEscalationError('Forbidden: SUPER_ADMIN is a platform role and cannot be scoped to a tenant.');
+          }
+          const effectiveRole = payload.role as Role;
           req.principal = new AuthenticatedPrincipal({
             id: payload.sub,
             email: payload.email,
+            isPlatformSuperAdmin,
             activeTenantId: payload.tenantId,
             sessionId: payload.sessionId,
             memberships: [
               {
                 tenantId: payload.tenantId ?? '',
-                role: payload.role as Role,
+                role: effectiveRole,
                 status: 'active',
                 customPermissions: payload.permissions as readonly Permission[],
               },
@@ -112,15 +141,22 @@ export class AuthenticationGuard {
 
     await this.sessionService.assertActivePersisted(payload.sessionId);
 
+    const isPlatformSuperAdmin = payload.role === 'SUPER_ADMIN' && payload.tenantId === null;
+    if (payload.role === 'SUPER_ADMIN' && payload.tenantId !== null) {
+      throw new PrivilegeEscalationError('Forbidden: SUPER_ADMIN is a platform role and cannot be scoped to a tenant.');
+    }
+    const effectiveRole = payload.role as Role;
+
     req.principal = new AuthenticatedPrincipal({
       id: payload.sub,
       email: payload.email,
+      isPlatformSuperAdmin,
       activeTenantId: payload.tenantId,
       sessionId: payload.sessionId,
       memberships: [
         {
           tenantId: payload.tenantId ?? '',
-          role: payload.role as Role,
+          role: effectiveRole,
           status: 'active',
           customPermissions: payload.permissions as readonly Permission[],
         },
