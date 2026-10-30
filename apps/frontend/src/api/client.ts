@@ -1,14 +1,15 @@
 import {
   MOCK_VEHICLES,
   MOCK_WORK_ORDERS,
-  MOCK_VOICE_PROPOSAL,
 } from './mock-backend.ts';
 import type {
   Vehicle,
   WorkOrder,
-  AIProposal,
   SerialPortInfo,
   ObdTelemetrySnapshot,
+  AIStatus,
+  HistorySummary,
+  MaintenanceExplanation,
 } from './contracts.ts';
 
 export class ApiError extends Error {
@@ -252,10 +253,6 @@ export class ApiClient {
       return MOCK_WORK_ORDERS as unknown as T;
     }
 
-    if (endpoint.includes('/voice-notes/process')) {
-      return MOCK_VOICE_PROPOSAL as unknown as T;
-    }
-
     return {} as T;
   }
 
@@ -420,27 +417,6 @@ export class ApiClient {
       method: 'POST',
       body: JSON.stringify(payload),
       signal,
-    });
-  }
-
-  public async processVoiceNote(audioBlob: Blob, signal?: AbortSignal): Promise<AIProposal> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        try {
-          const base64 = (reader.result as string).split(',')[1] ?? '';
-          const res = await this.request<AIProposal>('/ai/voice-notes/process', {
-            method: 'POST',
-            body: JSON.stringify({ audioBase64: base64, mimeType: audioBlob.type || 'audio/wav' }),
-            signal,
-          });
-          resolve(res);
-        } catch (e) {
-          reject(e);
-        }
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(audioBlob);
     });
   }
 
@@ -696,5 +672,60 @@ export class ApiClient {
     predictions: OwnerPredictionItem[];
   }> {
     return this.request(`/owner/vehicles/${vehicleId}/predictions`, { method: 'GET', signal });
+  }
+
+  public async getAiStatus(signal?: AbortSignal): Promise<AIStatus> {
+    try {
+      return await this.request<AIStatus>('/ai/status', { method: 'GET', signal });
+    } catch {
+      return {
+        isConfigured: false,
+        providerName: 'OfflineMode',
+        model: 'none',
+        message: 'No se pudo verificar el estado del servicio de IA.',
+      };
+    }
+  }
+
+  public async getOwnerHistorySummary(vehicleId: string, signal?: AbortSignal): Promise<HistorySummary> {
+    return this.request<HistorySummary>(`/owner/vehicles/${vehicleId}/history/summary`, {
+      method: 'POST',
+      signal,
+    });
+  }
+
+  public async getWorkshopHistorySummary(vehicleId: string, signal?: AbortSignal): Promise<HistorySummary> {
+    return this.request<HistorySummary>(`/vehicles/${vehicleId}/history/summary`, {
+      method: 'POST',
+      signal,
+    });
+  }
+
+  public async explainOwnerMaintenance(
+    vehicleId: string,
+    category: string,
+    signal?: AbortSignal
+  ): Promise<MaintenanceExplanation> {
+    return this.request<MaintenanceExplanation>(
+      `/owner/vehicles/${vehicleId}/predictions/${encodeURIComponent(category)}/explain`,
+      {
+        method: 'POST',
+        signal,
+      }
+    );
+  }
+
+  public async explainWorkshopMaintenance(
+    vehicleId: string,
+    category: string,
+    signal?: AbortSignal
+  ): Promise<MaintenanceExplanation> {
+    return this.request<MaintenanceExplanation>(
+      `/vehicles/${vehicleId}/predictions/${encodeURIComponent(category)}/explain`,
+      {
+        method: 'POST',
+        signal,
+      }
+    );
   }
 }

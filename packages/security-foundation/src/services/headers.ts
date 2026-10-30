@@ -19,7 +19,7 @@ export class SecurityHeadersService {
       'X-XSS-Protection': '0',
       'Strict-Transport-Security': 'max-age=63072000; includeSubDomains; preload',
       'Referrer-Policy': 'strict-origin-when-cross-origin',
-      'Permissions-Policy': 'camera=(), microphone=(self), geolocation=(), payment=()',
+      'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=()',
     };
   }
 

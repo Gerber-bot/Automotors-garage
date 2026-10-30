@@ -273,38 +273,6 @@ export function getDemoDashboardHtml(): string {
           </div>
         </div>
 
-        <!-- Asistente de Voz / Dictado IA -->
-        <div class="p-3.5 sm:p-4 bg-slate-950 border border-slate-800 rounded-2xl space-y-3">
-          <div class="flex items-center justify-between gap-2">
-            <span class="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-              🎤 Dictado por Voz Asistido con IA
-            </span>
-            <span class="text-[10px] font-mono text-emerald-400 bg-emerald-950 px-2 py-0.5 rounded border border-emerald-500/30 shrink-0">
-              Whisper + LLM
-            </span>
-          </div>
-          <p class="text-xs text-slate-400">Dictá las observaciones del mecánico para autocompletar la orden y el kilometraje.</p>
-          <div class="flex flex-wrap gap-2">
-            <button type="button" onclick="simulateVoiceDictation()" class="min-h-[44px] px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl transition-all cursor-pointer flex items-center justify-center">
-              🎙️ Simular Dictado de Mecánico
-            </button>
-            <span id="voice-status" class="text-xs text-slate-400 self-center"></span>
-          </div>
-
-          <!-- Panel de confirmación humana obligatoria -->
-          <div id="ai-confirmation-box" class="hidden p-3.5 bg-slate-900 border border-emerald-500/40 rounded-xl text-xs space-y-2">
-            <div class="flex flex-wrap items-center justify-between gap-1">
-              <strong class="text-emerald-400">Propuesta de IA extraída:</strong>
-              <span class="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded font-mono font-bold">requiresConfirmation: true</span>
-            </div>
-            <p id="ai-extracted-text" class="text-slate-300 font-mono text-[11px] bg-slate-950 p-2 rounded break-words">...</p>
-            <label class="min-h-[44px] flex items-center gap-2 text-slate-300 font-semibold cursor-pointer pt-1">
-              <input type="checkbox" id="ai-confirm-checkbox" class="w-4 h-4 rounded border-slate-700 text-emerald-500 accent-emerald-500">
-              <span class="text-xs leading-tight">Confirmo como técnico responsable que los datos extraídos son verídicos.</span>
-            </label>
-          </div>
-        </div>
-
         <!-- Observaciones libres -->
         <div class="space-y-2">
           <label class="text-xs font-bold text-slate-300 block">4. Observaciones Técnicas Internas</label>
@@ -910,22 +878,6 @@ export function getDemoDashboardHtml(): string {
         btn.className = 'min-h-[44px] inline-flex items-center text-xs font-bold text-emerald-400 hover:underline cursor-pointer';
       }
       openVehiclePassport(selectedVehicleId);
-    }
-
-    function simulateVoiceDictation() {
-      const status = document.getElementById('voice-status');
-      status.textContent = 'Escuchando dictado del mecánico...';
-      setTimeout(() => {
-        status.textContent = 'Procesando Whisper + Extractor LLM...';
-        setTimeout(() => {
-          status.textContent = '✓ Dictado procesado exitosamente.';
-          const box = document.getElementById('ai-confirmation-box');
-          box.classList.remove('hidden');
-          document.getElementById('ai-extracted-text').textContent =
-            'Dictado: "Ingresó Golf para cambio de aceite 5W40 y chequeo general con 58.500 km. Batería en 85%."';
-          document.getElementById('qs-odometer').value = 58500;
-        }, 600);
-      }, 500);
     }
 
     async function submitQuickService() {

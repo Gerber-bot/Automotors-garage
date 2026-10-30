@@ -1,8 +1,6 @@
 import { useState } from 'react';
 import { VehicleCard } from './VehicleCard.tsx';
-import { VoiceRecorder } from './VoiceRecorder.tsx';
-import { AIConfirmationPanel } from './AIConfirmationPanel.tsx';
-import type { Vehicle, AIProposal } from '../../api/contracts.ts';
+import type { Vehicle } from '../../api/contracts.ts';
 import { ApiClient } from '../../api/client.ts';
 
 export interface ServiceQuickEntryProps {
@@ -25,8 +23,7 @@ export function ServiceQuickEntry({ initialVehicles = [], onServiceSaved }: Serv
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
   const [odometerKm, setOdometerKm] = useState<number>(0);
   const [selectedServices, setSelectedServices] = useState<string[]>([]);
-  const [isProcessingVoice, setIsProcessingVoice] = useState(false);
-  const [aiProposal, setAiProposal] = useState<AIProposal | null>(null);
+  const [observations, setObservations] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -53,35 +50,6 @@ export function ServiceQuickEntry({ initialVehicles = [], onServiceSaved }: Serv
     );
   };
 
-  const handleAudioCaptured = async (audioBlob: Blob) => {
-    setIsProcessingVoice(true);
-    try {
-      const proposal = await apiClient.processVoiceNote(audioBlob);
-      setAiProposal(proposal);
-      setOdometerKm(proposal.odometerKm);
-
-      // Pre-select services recognized by AI
-      const matched = proposal.workPerformed
-        .map((p) => {
-          if (p.includes('oil')) return 'oil_change';
-          if (p.includes('brake')) return 'brake_pads';
-          if (p.includes('filter')) return 'cabin_air_filter';
-          return null;
-        })
-        .filter(Boolean) as string[];
-
-      setSelectedServices((prev) => Array.from(new Set([...prev, ...matched])));
-    } finally {
-      setIsProcessingVoice(false);
-    }
-  };
-
-  const handleAiConfirmed = (confirmed: AIProposal) => {
-    setOdometerKm(confirmed.odometerKm);
-    setAiProposal(null);
-    submitFinalService(confirmed.odometerKm, selectedServices, confirmed.diagnosisNotes);
-  };
-
   const submitFinalService = async (km: number, services: string[], notes?: string) => {
     if (!selectedVehicle) return;
     setIsSubmitting(true);
@@ -104,6 +72,7 @@ export function ServiceQuickEntry({ initialVehicles = [], onServiceSaved }: Serv
       setTimeout(() => {
         setSelectedVehicle(null);
         setSelectedServices([]);
+        setObservations('');
         setSuccessMessage(null);
         setSearchPlate('');
       }, 2500);
@@ -242,37 +211,29 @@ export function ServiceQuickEntry({ initialVehicles = [], onServiceSaved }: Serv
             </div>
           </div>
 
-          {/* Voice Notes Dictation */}
+          {/* Observations Input */}
           <div>
             <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
-              4. Dictado por Voz Asistido por IA (Opcional)
+              4. Observaciones Técnicas (Opcional)
             </label>
-            <VoiceRecorder
-              isProcessing={isProcessingVoice}
-              onAudioCaptured={handleAudioCaptured}
+            <textarea
+              rows={2}
+              value={observations}
+              onChange={(e) => setObservations(e.target.value)}
+              placeholder="Notas del mecánico, marca de insumos o estado general..."
+              className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
             />
           </div>
 
-          {/* AI Extraction Staging Panel */}
-          {aiProposal && (
-            <AIConfirmationPanel
-              proposal={aiProposal}
-              onConfirm={handleAiConfirmed}
-              onDismiss={() => setAiProposal(null)}
-            />
-          )}
-
           {/* Final Submit Button */}
-          {!aiProposal && (
-            <button
-              type="button"
-              disabled={isSubmitting || selectedServices.length === 0}
-              onClick={() => submitFinalService(odometerKm, selectedServices)}
-              className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 font-bold text-base rounded-xl transition-all shadow-lg shadow-emerald-950/50 active:scale-[0.98] mt-3"
-            >
-              {isSubmitting ? 'Guardando en Libro de Taller...' : 'Finalizar y Guardar Intervención'}
-            </button>
-          )}
+          <button
+            type="button"
+            disabled={isSubmitting || selectedServices.length === 0}
+            onClick={() => submitFinalService(odometerKm, selectedServices, observations.trim() || undefined)}
+            className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 font-bold text-base rounded-xl transition-all shadow-lg shadow-emerald-950/50 active:scale-[0.98] mt-3"
+          >
+            {isSubmitting ? 'Guardando en Libro de Taller...' : 'Finalizar y Guardar Intervención'}
+          </button>
         </div>
       )}
     </div>

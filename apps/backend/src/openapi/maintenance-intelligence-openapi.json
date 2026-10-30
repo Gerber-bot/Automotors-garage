@@ -2,10 +2,19 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Automotors Garage - Maintenance Intelligence API",
-    "version": "1.0.0",
-    "description": "Deterministic preventive maintenance calculator and AI-assisted voice note transcription & OBD2 interpretation."
+    "version": "2.0.0",
+    "description": "Deterministic preventive maintenance calculator and AI-assisted vehicle history summary, maintenance explanation, and OBD2 interpretation."
   },
   "paths": {
+    "/ai/status": {
+      "get": {
+        "summary": "Check AI service status and configuration",
+        "description": "Reports whether the AI provider is configured and available without disclosing secrets.",
+        "responses": {
+          "200": { "description": "AI provider configuration status." }
+        }
+      }
+    },
     "/maintenance/calculate-preventive": {
       "post": {
         "summary": "Calculate deterministic preventive maintenance due targets",
@@ -15,26 +24,28 @@
         }
       }
     },
-    "/ai/voice-notes/process": {
+    "/vehicles/{id}/history/summary": {
       "post": {
-        "summary": "Transcribe voice note and extract structured proposal",
-        "description": "Transcribes audio dictation and proposes work order line items. Returns requiresConfirmation: true for mandatory human mechanic review.",
-        "requestBody": {
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "file": { "type": "string", "format": "binary" },
-                  "vehicleId": { "type": "string" },
-                  "workshopId": { "type": "string" }
-                }
-              }
-            }
-          }
-        },
+        "summary": "Contextual AI summary of vehicle maintenance history",
+        "description": "Synthesizes vehicle maintenance records into structured interventions, recent services, recurring repairs, and data limitations.",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
         "responses": {
-          "200": { "description": "Structured proposal awaiting mechanic confirmation." }
+          "200": { "description": "Structured history summary." }
+        }
+      }
+    },
+    "/vehicles/{id}/predictions/{category}/explain": {
+      "post": {
+        "summary": "Contextual AI explanation of deterministic maintenance predictions",
+        "description": "Explains the deterministic calculation without altering intervals or numbers.",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "category", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Structured maintenance prediction explanation." }
         }
       }
     },

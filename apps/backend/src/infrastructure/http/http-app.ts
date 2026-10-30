@@ -46,9 +46,12 @@ import { MaintenanceRecord } from '../../modules/maintenance-history/domain/main
 import { VerificationLevel } from '../../modules/maintenance-history/domain/verification-level.ts';
 import { maintenanceIntervals } from '@automotors/database';
 import { ilike, and } from 'drizzle-orm';
-import { ProcessVoiceNoteUseCase } from '../../modules/maintenance-intelligence/application/process-voice-note.usecase.ts';
+import { SummarizeHistoryUseCase } from '../../modules/maintenance-intelligence/application/summarize-history.usecase.ts';
+import { ExplainMaintenanceUseCase } from '../../modules/maintenance-intelligence/application/explain-maintenance.usecase.ts';
 import { InterpretObd2UseCase } from '../../modules/maintenance-intelligence/application/interpret-obd2.usecase.ts';
-import { MockAIProvider, MockTranscriptionProvider } from '../../modules/maintenance-intelligence/adapters/mock-ai.adapter.ts';
+import { OpenAIAIAdapter } from '../../modules/maintenance-intelligence/adapters/openai-ai.adapter.ts';
+import type { AIProviderPort } from '../../modules/maintenance-intelligence/ports/ai-provider.port.ts';
+import type { StructuredExtractionPort } from '../../modules/maintenance-intelligence/ports/structured-extraction.port.ts';
 import { DemoSeeder } from '../database/demo-seed.ts';
 import { getDemoDashboardHtml } from './demo-web-ui.ts';
 import { ObdDiagnosticsService, ObdError, ObdSecurityError } from '@automotors/obd-core';
@@ -56,6 +59,7 @@ import { ObdDiagnosticsService, ObdError, ObdSecurityError } from '@automotors/o
 export interface HttpAppDependencies {
   db: DatabaseInstance;
   jwtSecret?: string;
+  aiProvider?: AIProviderPort & StructuredExtractionPort;
 }
 
 export class HttpApp {
@@ -82,7 +86,9 @@ export class HttpApp {
   private readonly quickServiceUseCase: QuickServiceUseCase;
   private readonly getPassportUseCase: GetVehiclePassportUseCase;
   private readonly calcPreventiveUseCase: CalculatePreventiveDueUseCase;
-  private readonly voiceNoteUseCase: ProcessVoiceNoteUseCase;
+  private readonly aiProvider: AIProviderPort & StructuredExtractionPort;
+  private readonly summarizeHistoryUseCase: SummarizeHistoryUseCase;
+  private readonly explainMaintenanceUseCase: ExplainMaintenanceUseCase;
   private readonly obd2UseCase: InterpretObd2UseCase;
   private readonly obdService: ObdDiagnosticsService;
 
@@ -101,6 +107,7 @@ export class HttpApp {
     this.routeRegistry.registerPublicRoute('/demo', 'GET');
     this.routeRegistry.registerPublicRoute('/health/live', 'GET');
     this.routeRegistry.registerPublicRoute('/health/ready', 'GET');
+    this.routeRegistry.registerPublicRoute('/api/v1/ai/status', 'GET');
     this.routeRegistry.registerPublicRoute('/api/v1/auth/login', 'POST');
     this.routeRegistry.registerPublicRoute('/api/v1/auth/register', 'POST');
     this.routeRegistry.registerPublicRoute('/api/v1/demo/seed', 'POST');
@@ -137,11 +144,16 @@ export class HttpApp {
     );
     this.getPassportUseCase = new GetVehiclePassportUseCase(this.vehicleRepo, this.historyRepo);
     this.calcPreventiveUseCase = new CalculatePreventiveDueUseCase();
-    this.voiceNoteUseCase = new ProcessVoiceNoteUseCase(
-      new MockTranscriptionProvider(),
-      new MockAIProvider()
-    );
-    this.obd2UseCase = new InterpretObd2UseCase(new MockAIProvider());
+
+    this.aiProvider =
+      deps.aiProvider ??
+      new OpenAIAIAdapter({
+        apiKey: process.env.OPENAI_API_KEY,
+        model: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',
+      });
+    this.summarizeHistoryUseCase = new SummarizeHistoryUseCase(this.aiProvider);
+    this.explainMaintenanceUseCase = new ExplainMaintenanceUseCase(this.aiProvider);
+    this.obd2UseCase = new InterpretObd2UseCase(this.aiProvider);
     this.obdService = new ObdDiagnosticsService();
   }
 
@@ -259,6 +271,24 @@ export class HttpApp {
         const seedResult = await seeder.seed();
         this.log('INFO', 'Demo seed executed successfully', { requestId, seedResult });
         return this.sendJson(res, 200, { message: 'Demo data seeded successfully.', seedResult }, requestId);
+      }
+
+      // AI: Configuration & Availability Status
+      if (pathname === '/api/v1/ai/status' && method === 'GET') {
+        const isConfigured = this.aiProvider.isConfigured();
+        return this.sendJson(
+          res,
+          200,
+          {
+            isConfigured,
+            providerName: this.aiProvider.getProviderName(),
+            model: this.aiProvider.getModelVersion(),
+            message: isConfigured
+              ? 'Servicio de IA activo y configurado.'
+              : 'El servicio de IA no está configurado (falta API key). Las funciones operan en modo determinista sin asistencia de IA.',
+          },
+          requestId
+        );
       }
 
       // Convert Node headers to record
@@ -920,6 +950,57 @@ export class HttpApp {
           );
         }
 
+        // OWNER VEHICLE HISTORY SUMMARY (/api/v1/owner/vehicles/:id/history/summary)
+        const ownerSummaryMatch = pathname.match(/^\/api\/v1\/owner\/vehicles\/([^/]+)\/history\/summary$/);
+        if (ownerSummaryMatch && method === 'POST') {
+          const vehicleId = ownerSummaryMatch[1]!;
+          if (!uuidRegex.test(vehicleId)) {
+            return this.sendJson(res, 404, { error: 'Vehículo no encontrado.' }, requestId);
+          }
+
+          const vehicle = await this.vehicleRepo.findById(vehicleId);
+          if (!vehicle) {
+            return this.sendJson(res, 404, { error: 'Vehículo no encontrado.' }, requestId);
+          }
+          if (vehicle.ownerId !== principal.id) {
+            return this.sendJson(
+              res,
+              403,
+              { error: 'Acceso denegado: no sos el propietario autorizado de este vehículo.' },
+              requestId
+            );
+          }
+
+          const records = await this.historyRepo.findByVehicleId(vehicle.id);
+          const mappedRecords = records.map((r) => ({
+            id: r.id,
+            serviceDate: r.serviceDate,
+            mileage: r.recordedMileage,
+            title: r.interventions[0]?.title ?? 'Mantenimiento',
+            description: r.interventions.map((i) => i.title).join(', '),
+            performedInterventions: r.interventions.map((i) => i.title),
+            isVerified: r.isCertified,
+            verificationLevel: r.verificationLevel,
+            observations: r.internalNotes,
+          }));
+
+          const summaryResult = await this.summarizeHistoryUseCase.execute({
+            vehicleId: vehicle.id,
+            vehicleMake: vehicle.make,
+            vehicleModel: vehicle.model,
+            vehicleYear: vehicle.year,
+            currentMileageKm: vehicle.currentMileage,
+            records: mappedRecords,
+            userId: principal.id,
+          });
+
+          if (summaryResult.isFailure) {
+            return this.sendJson(res, 400, { error: summaryResult.getError() }, requestId);
+          }
+
+          return this.sendJson(res, 200, summaryResult.getValue(), requestId);
+        }
+
         // OWNER MANUAL MAINTENANCE REGISTRATION (/api/v1/owner/vehicles/:id/maintenance)
         const ownerMaintMatch = pathname.match(/^\/api\/v1\/owner\/vehicles\/([^/]+)\/maintenance$/);
         if (ownerMaintMatch && method === 'POST') {
@@ -1327,6 +1408,97 @@ export class HttpApp {
           );
         }
 
+        // OWNER DETERMINISTIC MAINTENANCE PREDICTION EXPLAIN (/api/v1/owner/vehicles/:id/predictions/:category/explain)
+        const ownerExplainMatch = pathname.match(/^\/api\/v1\/owner\/vehicles\/([^/]+)\/predictions\/([^/]+)\/explain$/);
+        if (ownerExplainMatch && method === 'POST') {
+          const vehicleId = ownerExplainMatch[1]!;
+          const categoryParam = ownerExplainMatch[2]!;
+          if (!uuidRegex.test(vehicleId)) {
+            return this.sendJson(res, 404, { error: 'Vehículo no encontrado.' }, requestId);
+          }
+
+          const vehicle = await this.vehicleRepo.findById(vehicleId);
+          if (!vehicle) {
+            return this.sendJson(res, 404, { error: 'Vehículo no encontrado.' }, requestId);
+          }
+          if (vehicle.ownerId !== principal.id) {
+            return this.sendJson(
+              res,
+              403,
+              { error: 'Acceso denegado: no sos el propietario autorizado de este vehículo.' },
+              requestId
+            );
+          }
+
+          const normalizedCat = VehicleKnowledgeBase.normalizeCategory(categoryParam);
+          const records = await this.historyRepo.findByVehicleId(vehicle.id);
+          const kbProfile = VehicleKnowledgeBase.findProfile({ make: vehicle.make, model: vehicle.model, year: vehicle.year });
+          let rule = kbProfile?.intervals.find((r) => r.category === normalizedCat) ?? null;
+
+          if (!rule) {
+            const dbIntervalRows = await this.db
+              .select()
+              .from(maintenanceIntervals)
+              .where(
+                and(
+                  ilike(maintenanceIntervals.make, vehicle.make),
+                  ilike(maintenanceIntervals.model, vehicle.model)
+                )
+              );
+            const foundRow = dbIntervalRows.find((r) => VehicleKnowledgeBase.normalizeCategory(r.category) === normalizedCat);
+            if (foundRow && foundRow.intervalKm && foundRow.intervalMonths) {
+              rule = {
+                id: foundRow.id,
+                category: normalizedCat,
+                title: `Mantenimiento Preventivo (${normalizedCat})`,
+                intervalKm: Number(foundRow.intervalKm),
+                intervalMonths: Number(foundRow.intervalMonths),
+                source: IntervalSource.OEM_MANUAL,
+                sourceCitation: foundRow.sourceCitation,
+              };
+            }
+          }
+
+          const previousServices: PreviousServiceEntry[] = [];
+          for (const rec of records) {
+            for (const intv of rec.interventions) {
+              if (VehicleKnowledgeBase.normalizeCategory(intv.category || intv.title) === normalizedCat) {
+                previousServices.push({
+                  serviceDate: rec.serviceDate,
+                  recordedMileage: rec.recordedMileage,
+                  category: normalizedCat,
+                });
+              }
+            }
+          }
+
+          const engine = new DeterministicMaintenanceEngine();
+          const calcResult = engine.calculate({
+            vehicle: {
+              id: vehicle.id,
+              make: vehicle.make,
+              model: vehicle.model,
+              year: vehicle.year,
+              currentMileage: vehicle.currentMileage,
+            },
+            rule,
+            previousServices,
+          });
+
+          const explainResult = await this.explainMaintenanceUseCase.execute({
+            vehicleSummary: `${vehicle.make} ${vehicle.model} (${vehicle.year}), Odómetro: ${vehicle.currentMileage} km`,
+            deterministicCalculation: calcResult,
+            customerLanguage: 'Spanish',
+            userId: principal.id,
+          });
+
+          if (explainResult.isFailure) {
+            return this.sendJson(res, 400, { error: explainResult.getError() }, requestId);
+          }
+
+          return this.sendJson(res, 200, explainResult.getValue(), requestId);
+        }
+
         return this.sendJson(res, 404, { error: `Owner route '${method} ${pathname}' not found.` }, requestId);
       }
 
@@ -1623,20 +1795,122 @@ export class HttpApp {
         return this.sendJson(res, 200, { ...primary, results: calculations }, requestId);
       }
 
-      // AI: VOICE NOTES INTAKE
-      if (pathname === '/api/v1/ai/voice-notes/process' && method === 'POST') {
-        const body = await this.parseBody(req);
-        const result = await this.voiceNoteUseCase.execute({
-          audioBuffer: Buffer.from(body.audioBase64 ?? '', 'base64'),
-          mimeType: body.mimeType ?? 'audio/wav',
-          workshopId: tenantId,
-          vehicleId: body.vehicleId ?? 'v-default',
-          mechanicId: reqContext.principal?.id ?? 'mechanic-1',
-        });
-        if (result.isFailure) {
-          return this.sendJson(res, 400, { error: result.getError() }, requestId);
+      // WORKSHOP VEHICLE HISTORY SUMMARY
+      const workshopSummaryMatch = pathname.match(/^\/api\/v1\/vehicles\/([^/]+)\/history\/summary$/);
+      if (workshopSummaryMatch && method === 'POST') {
+        const vehicleId = workshopSummaryMatch[1]!;
+        const vehicle = await this.vehicleRepo.findById(vehicleId);
+        if (!vehicle) {
+          return this.sendJson(res, 404, { error: 'Vehículo no encontrado.' }, requestId);
         }
-        return this.sendJson(res, 200, result.getValue(), requestId);
+
+        const records = await this.historyRepo.findByVehicleId(vehicle.id);
+        const mappedRecords = records.map((r) => ({
+          id: r.id,
+          serviceDate: r.serviceDate,
+          mileage: r.recordedMileage,
+          title: r.interventions[0]?.title ?? 'Mantenimiento',
+          description: r.interventions.map((i) => i.title).join(', '),
+          performedInterventions: r.interventions.map((i) => i.title),
+          isVerified: r.isCertified,
+          verificationLevel: r.verificationLevel,
+          observations: r.internalNotes,
+        }));
+
+        const summaryResult = await this.summarizeHistoryUseCase.execute({
+          vehicleId: vehicle.id,
+          vehicleMake: vehicle.make,
+          vehicleModel: vehicle.model,
+          vehicleYear: vehicle.year,
+          currentMileageKm: vehicle.currentMileage,
+          records: mappedRecords,
+          workshopId: tenantId,
+        });
+
+        if (summaryResult.isFailure) {
+          return this.sendJson(res, 400, { error: summaryResult.getError() }, requestId);
+        }
+
+        return this.sendJson(res, 200, summaryResult.getValue(), requestId);
+      }
+
+      // WORKSHOP PREDICTION EXPLAIN
+      const workshopExplainMatch = pathname.match(/^\/api\/v1\/vehicles\/([^/]+)\/predictions\/([^/]+)\/explain$/);
+      if (workshopExplainMatch && method === 'POST') {
+        const vehicleId = workshopExplainMatch[1]!;
+        const categoryParam = workshopExplainMatch[2]!;
+        const vehicle = await this.vehicleRepo.findById(vehicleId);
+        if (!vehicle) {
+          return this.sendJson(res, 404, { error: 'Vehículo no encontrado.' }, requestId);
+        }
+
+        const normalizedCat = VehicleKnowledgeBase.normalizeCategory(categoryParam);
+        const records = await this.historyRepo.findByVehicleId(vehicle.id);
+        const kbProfile = VehicleKnowledgeBase.findProfile({ make: vehicle.make, model: vehicle.model, year: vehicle.year });
+        let rule = kbProfile?.intervals.find((r) => r.category === normalizedCat) ?? null;
+
+        if (!rule) {
+          const dbIntervalRows = await this.db
+            .select()
+            .from(maintenanceIntervals)
+            .where(
+              and(
+                ilike(maintenanceIntervals.make, vehicle.make),
+                ilike(maintenanceIntervals.model, vehicle.model)
+              )
+            );
+          const foundRow = dbIntervalRows.find((r) => VehicleKnowledgeBase.normalizeCategory(r.category) === normalizedCat);
+          if (foundRow && foundRow.intervalKm && foundRow.intervalMonths) {
+            rule = {
+              id: foundRow.id,
+              category: normalizedCat,
+              title: `Mantenimiento Preventivo (${normalizedCat})`,
+              intervalKm: Number(foundRow.intervalKm),
+              intervalMonths: Number(foundRow.intervalMonths),
+              source: IntervalSource.OEM_MANUAL,
+              sourceCitation: foundRow.sourceCitation,
+            };
+          }
+        }
+
+        const previousServices: PreviousServiceEntry[] = [];
+        for (const rec of records) {
+          for (const intv of rec.interventions) {
+            if (VehicleKnowledgeBase.normalizeCategory(intv.category || intv.title) === normalizedCat) {
+              previousServices.push({
+                serviceDate: rec.serviceDate,
+                recordedMileage: rec.recordedMileage,
+                category: normalizedCat,
+              });
+            }
+          }
+        }
+
+        const engine = new DeterministicMaintenanceEngine();
+        const calcResult = engine.calculate({
+          vehicle: {
+            id: vehicle.id,
+            make: vehicle.make,
+            model: vehicle.model,
+            year: vehicle.year,
+            currentMileage: vehicle.currentMileage,
+          },
+          rule,
+          previousServices,
+        });
+
+        const explainResult = await this.explainMaintenanceUseCase.execute({
+          vehicleSummary: `${vehicle.make} ${vehicle.model} (${vehicle.year}), Odómetro: ${vehicle.currentMileage} km`,
+          deterministicCalculation: calcResult,
+          customerLanguage: 'Spanish',
+          workshopId: tenantId,
+        });
+
+        if (explainResult.isFailure) {
+          return this.sendJson(res, 400, { error: explainResult.getError() }, requestId);
+        }
+
+        return this.sendJson(res, 200, explainResult.getValue(), requestId);
       }
 
       // AI: OBD2 INTERPRETATION

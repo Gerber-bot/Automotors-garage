@@ -3,7 +3,7 @@ import * as assert from 'node:assert/strict';
 
 import {
   QuickServiceEntrySchema,
-  AIProposalSchema,
+  ObdAiAnalysisSchema,
   CreateVehicleDtoSchema,
 } from '../src/api/contracts.ts';
 import { ApiClient } from '../src/api/client.ts';
@@ -45,27 +45,25 @@ describe('Frontend Architecture & Components Test Suite', () => {
   });
 
   // ============================================================================
-  // Test 2: Validación de esquemas de propuesta de IA
+  // Test 2: Validación de esquemas de análisis asistido de OBD-II
   // ============================================================================
-  it('2. Esquema de propuesta de IA siempre exige requiresConfirmation: true', () => {
-    const validProposal = {
-      odometerKm: 42000,
-      workPerformed: ['cabin_filter_replacement'],
-      suggestedNextServiceKm: 52000,
-      confidence: 0.98,
-      requiresConfirmation: true,
+  it('2. Esquema de diagnóstico OBD-II valida estructura técnica y descargo obligatorio', () => {
+    const validAnalysis = {
+      codesAnalyzed: ['P0300'],
+      systemicImpact: 'Multiple cylinder misfire detected.',
+      urgencyLevel: 'IMMEDIATE_ACTION',
+      mechanicChecklist: ['Check coils', 'Check plugs'],
+      disclaimer: 'Orientación técnica obligatoria.',
     };
 
-    assert.equal(AIProposalSchema.safeParse(validProposal).success, true);
+    assert.equal(ObdAiAnalysisSchema.safeParse(validAnalysis).success, true);
 
-    const invalidProposal = {
-      odometerKm: 42000,
-      workPerformed: ['cabin_filter_replacement'],
-      confidence: 0.98,
-      requiresConfirmation: false, // Violation of Human-in-the-loop!
+    const invalidAnalysis = {
+      codesAnalyzed: 'not-an-array',
+      urgencyLevel: 'INVALID_LEVEL',
     };
 
-    assert.equal(AIProposalSchema.safeParse(invalidProposal).success, false);
+    assert.equal(ObdAiAnalysisSchema.safeParse(invalidAnalysis).success, false);
   });
 
   // ============================================================================

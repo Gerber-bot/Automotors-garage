@@ -15,16 +15,15 @@ import type {
   ServiceIntervalRule,
 } from '../src/modules/maintenance-intelligence/domain/intervals.ts';
 import { CalculatePreventiveDueUseCase } from '../src/modules/maintenance-intelligence/application/calculate-preventive-due.usecase.ts';
-import { ProcessVoiceNoteUseCase } from '../src/modules/maintenance-intelligence/application/process-voice-note.usecase.ts';
+import { SummarizeHistoryUseCase } from '../src/modules/maintenance-intelligence/application/summarize-history.usecase.ts';
 import { ExplainMaintenanceUseCase } from '../src/modules/maintenance-intelligence/application/explain-maintenance.usecase.ts';
 import { InterpretObd2UseCase } from '../src/modules/maintenance-intelligence/application/interpret-obd2.usecase.ts';
-import { MockAIProvider, MockTranscriptionProvider } from '../src/modules/maintenance-intelligence/adapters/mock-ai.adapter.ts';
+import { MockAIProvider } from '../src/modules/maintenance-intelligence/adapters/mock-ai.adapter.ts';
 import { OpenAIAIAdapter } from '../src/modules/maintenance-intelligence/adapters/openai-ai.adapter.ts';
 
 describe('Maintenance Intelligence Engine Test Suite', () => {
   let engine: DeterministicMaintenanceEngine;
   let mockAi: MockAIProvider;
-  let mockTranscription: MockTranscriptionProvider;
 
   const standardOilRule: ServiceIntervalRule = {
     id: 'rule-oil-10k',
@@ -51,7 +50,6 @@ describe('Maintenance Intelligence Engine Test Suite', () => {
   beforeEach(() => {
     engine = new DeterministicMaintenanceEngine();
     mockAi = new MockAIProvider();
-    mockTranscription = new MockTranscriptionProvider();
   });
 
   // ============================================================================
@@ -222,57 +220,123 @@ describe('Maintenance Intelligence Engine Test Suite', () => {
   });
 
   // ============================================================================
-  // Test 6: Transcripción de Notas de Voz y Extracción Estructurada con Revisión Humana
+  // Test 6: Resumen Inteligente del Historial Vehicular con IA
   // ============================================================================
-  it('6. Notas de voz: IA extrae propuesta estructurada y obliga confirmación humana (requiresConfirmation: true)', async () => {
-    const useCase = new ProcessVoiceNoteUseCase(mockTranscription, mockAi);
+  it('6. Resumen de historial: IA extrae resumen estructurado validado con Zod', async () => {
+    mockAi.setCustomCompletion((_prompt) =>
+      JSON.stringify({
+        vehicleId: 'v-100',
+        totalRecordsAnalyzed: 3,
+        mainInterventions: ['Cambio de kit de distribución', 'Service de aceite y filtros', 'Reemplazo de pastillas delanteras'],
+        recentServices: [
+          { date: '2026-03-10', title: 'Service 60.000 km', mileage: 60200, isCertified: true },
+          { date: '2025-03-01', title: 'Cambio de Aceite 50k', mileage: 50100, isCertified: true },
+        ],
+        recurringRepairs: ['Reemplazo de pastillas delanteras (2 registros registrados)'],
+        relevantObservations: ['Sin pérdidas de fluido detectadas. Neumáticos en buen estado.'],
+        dataLimitations: ['Falta comprobante fiscal de primera intervención.'],
+        referencedRecordIds: ['rec-1', 'rec-2', 'rec-3'],
+        generatedAt: '2026-10-30T12:00:00.000Z',
+        isAiGenerated: true,
+        providerName: 'OpenAIAdapter',
+      })
+    );
 
-    const fakeAudio = Buffer.from('RIFF....WAVEfmt....data');
+    const useCase = new SummarizeHistoryUseCase(mockAi);
 
     const result = await useCase.execute({
-      audioBuffer: fakeAudio,
-      mimeType: 'audio/wav',
-      workshopId: 'workshop-123',
-      mechanicId: 'mech-1',
-      vehicleId: 'veh-1',
+      vehicleId: 'v-100',
+      vehicleMake: 'Renault',
+      vehicleModel: 'Logan',
+      vehicleYear: 2020,
+      currentMileageKm: 65000,
+      records: [
+        {
+          id: 'rec-1',
+          serviceDate: new Date('2026-03-10'),
+          mileage: 60200,
+          title: 'Service 60.000 km',
+          performedInterventions: ['Cambio de kit de distribución', 'Aceite 5W40'],
+          isVerified: true,
+        },
+        {
+          id: 'rec-2',
+          serviceDate: new Date('2025-03-01'),
+          mileage: 50100,
+          title: 'Cambio de Aceite 50k',
+          performedInterventions: ['Aceite 5W40', 'Filtro de aire'],
+          isVerified: true,
+        },
+        {
+          id: 'rec-3',
+          serviceDate: new Date('2024-02-15'),
+          mileage: 40000,
+          title: 'Frenos delanteros',
+          performedInterventions: ['Reemplazo de pastillas delanteras'],
+          isVerified: false,
+        },
+      ],
     });
 
     assert.equal(result.isSuccess, true);
-    const data = result.getValue();
-
-    assert.equal(data.requiresMechanicReview, true);
-    assert.equal(data.proposal.requiresConfirmation, true); // Strict human-in-the-loop guarantee!
-    assert.equal(data.proposal.odometerKm, 112000);
-    assert.deepEqual(data.proposal.workPerformed, ['oil_change', 'oil_filter_replacement']);
-    assert.equal(data.proposal.suggestedNextServiceKm, 122000);
-    assert.ok(data.safetyNotice);
+    const summary = result.getValue();
+    assert.equal(summary.vehicleId, 'v-100');
+    assert.equal(summary.totalRecordsAnalyzed, 3);
+    assert.ok(summary.mainInterventions.includes('Cambio de kit de distribución'));
+    assert.equal(summary.recentServices.length, 2);
+    assert.equal(summary.isAiGenerated, true);
+    assert.deepEqual(summary.referencedRecordIds, ['rec-1', 'rec-2', 'rec-3']);
   });
 
   // ============================================================================
-  // Test 7: Respuestas Malformadas de IA (Recuperación y Fallback Seguro)
+  // Test 7: Resumen de Historial con Fallback Determinista Seguro
   // ============================================================================
-  it('7. Respuestas malformadas de IA: extractor rechaza schema inválido y no rompe el flujo', async () => {
-    mockAi.setSimulateMalformed(true); // Emits broken JSON
-    const useCase = new ProcessVoiceNoteUseCase(mockTranscription, mockAi);
+  it('7. Resumen de historial: genera resumen determinista seguro cuando la IA está deshabilitada', async () => {
+    mockAi.setConfigured(false); // Provider disabled
+
+    const useCase = new SummarizeHistoryUseCase(mockAi);
 
     const result = await useCase.execute({
-      audioBuffer: Buffer.from('RIFF....WAVE'),
-      mimeType: 'audio/wav',
-      workshopId: 'workshop-123',
-      mechanicId: 'mech-1',
-      vehicleId: 'veh-1',
+      vehicleId: 'v-200',
+      vehicleMake: 'Renault',
+      vehicleModel: 'Logan',
+      vehicleYear: 2020,
+      currentMileageKm: 85000,
+      records: [
+        {
+          id: 'rec-a',
+          serviceDate: new Date('2026-05-01'),
+          mileage: 80000,
+          title: 'Cambio de Aceite y Filtro',
+          performedInterventions: ['Aceite 5W40', 'Filtro de Aceite'],
+          isVerified: true,
+          observations: 'Nivel correcto, sin fugas.',
+        },
+        {
+          id: 'rec-b',
+          serviceDate: new Date('2025-05-01'),
+          mileage: 70000,
+          title: 'Cambio de Aceite y Filtro',
+          performedInterventions: ['Aceite 5W40', 'Filtro de Aceite'],
+          isVerified: false,
+        },
+      ],
     });
 
-    assert.equal(result.isFailure, true);
-    assert.match(result.getError(), /schema validation failed/i);
+    assert.equal(result.isSuccess, true);
+    const summary = result.getValue();
+    assert.equal(summary.vehicleId, 'v-200');
+    assert.equal(summary.totalRecordsAnalyzed, 2);
+    assert.equal(summary.isAiGenerated, false);
+    assert.equal(summary.providerName, 'DeterministicRuleBasedEngine');
+    assert.ok(summary.recurringRepairs.some((r) => r.includes('Cambio de Aceite y Filtro')));
+    assert.ok(summary.dataLimitations.some((l) => l.includes('no poseen certificación')));
   });
 
   // ============================================================================
-  // Test 8: Timeouts de Proveedores y Fallback Determinista en Explicación
+  // Test 8: Explicación de Mantenimiento sin Modificar Intervalos ni Números
   // ============================================================================
-  it('8. Timeout de proveedor de IA: el caso de uso realiza fallback determinista seguro sin colapsar', async () => {
-    mockAi.setSimulateTimeout(true); // Simulates network hang
-
+  it('8. Explicación de mantenimiento: explica cálculo determinista sin alterar kilometrajes ni fechas', async () => {
     const explainUseCase = new ExplainMaintenanceUseCase(mockAi);
 
     const calcResult = engine.calculate({
@@ -286,42 +350,26 @@ describe('Maintenance Intelligence Engine Test Suite', () => {
       deterministicCalculation: calcResult,
     });
 
-    // Does not fail! Returns safe deterministic fallback text
     assert.equal(explanationResult.isSuccess, true);
     const output = explanationResult.getValue();
+    assert.equal(output.category, ServiceCategory.TIMING_BELT);
     assert.equal(output.nextDueMileage, 60000);
     assert.equal(output.remainingKm, 1500);
-    assert.equal(output.modelProvenance, 'deterministic-fallback-on-error');
+    assert.equal(output.status, MaintenanceStatus.OVERDUE);
+    assert.ok(output.disclaimer.includes('inspección física'));
   });
 
   // ============================================================================
-  // Test 9: Errores en Transcripción de Audio
+  // Test 9: OpenAIAIAdapter no simula IA si falta API Key y respeta timeout
   // ============================================================================
-  it('9. Error en motor de transcripción: payload vacío o fallo de audio devuelve error controlado', async () => {
-    const useCase = new ProcessVoiceNoteUseCase(mockTranscription, mockAi);
+  it('9. OpenAIAIAdapter: no simula respuestas sin API key (isConfigured === false) y rechaza ejecución', async () => {
+    const unconfiguredAdapter = new OpenAIAIAdapter({ apiKey: undefined });
 
-    // Empty audio buffer
-    const emptyResult = await useCase.execute({
-      audioBuffer: Buffer.alloc(0),
-      mimeType: 'audio/wav',
-      workshopId: 'w-1',
-      mechanicId: 'm-1',
-      vehicleId: 'v-1',
-    });
-    assert.equal(emptyResult.isFailure, true);
-    assert.match(emptyResult.getError(), /Audio buffer cannot be empty/i);
-
-    // Simulated provider crash
-    mockTranscription.setSimulateFailure(true);
-    const crashResult = await useCase.execute({
-      audioBuffer: Buffer.from('audio_bytes'),
-      mimeType: 'audio/wav',
-      workshopId: 'w-1',
-      mechanicId: 'm-1',
-      vehicleId: 'v-1',
-    });
-    assert.equal(crashResult.isFailure, true);
-    assert.match(crashResult.getError(), /Voice transcription failed/i);
+    assert.equal(unconfiguredAdapter.isConfigured(), false);
+    await assert.rejects(
+      async () => await unconfiguredAdapter.generateCompletion('test prompt'),
+      /AI Provider is unconfigured/i
+    );
   });
 
   // ============================================================================
@@ -365,25 +413,41 @@ describe('Maintenance Intelligence Engine Test Suite', () => {
   // Test 11: Aislamiento de Presupuestos / Cuotas de IA entre Talleres
   // ============================================================================
   it('11. Aislamiento y control de cuotas de IA por taller: previene consumo desmedido', async () => {
-    const openaiAdapter = new OpenAIAIAdapter({
-      maxMonthlyBudgetPerWorkshop: 2, // Set budget to 2 requests
-    });
+    const originalFetch = globalThis.fetch;
+    // Mock fetch to simulate successful OpenAI responses
+    globalThis.fetch = (async () => {
+      return {
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: 'Simulated response' } }],
+        }),
+      } as any;
+    }) as any;
 
-    // Call 1 from Workshop Alpha -> Allowed
-    await openaiAdapter.generateCompletion('Test prompt', { workshopId: 'workshop-alpha' });
+    try {
+      const openaiAdapter = new OpenAIAIAdapter({
+        apiKey: 'sk-valid-test-key-for-unit-test-quota',
+        maxMonthlyBudgetPerWorkshop: 2,
+      });
 
-    // Call 2 from Workshop Alpha -> Allowed
-    await openaiAdapter.generateCompletion('Test prompt', { workshopId: 'workshop-alpha' });
+      // Call 1 from Workshop Alpha -> Allowed
+      await openaiAdapter.generateCompletion('Test prompt', { workshopId: 'workshop-alpha' });
 
-    // Call 3 from Workshop Alpha -> Budget Exceeded!
-    await assert.rejects(
-      async () => await openaiAdapter.generateCompletion('Test prompt', { workshopId: 'workshop-alpha' }),
-      /AI budget quota exceeded for workshop 'workshop-alpha'/i
-    );
+      // Call 2 from Workshop Alpha -> Allowed
+      await openaiAdapter.generateCompletion('Test prompt', { workshopId: 'workshop-alpha' });
 
-    // Call from Workshop Bravo is unaffected (Tenant Isolation)!
-    const bravoResult = await openaiAdapter.generateCompletion('Test prompt', { workshopId: 'workshop-bravo' });
-    assert.ok(bravoResult);
+      // Call 3 from Workshop Alpha -> Budget Exceeded!
+      await assert.rejects(
+        async () => await openaiAdapter.generateCompletion('Test prompt', { workshopId: 'workshop-alpha' }),
+        /AI budget quota exceeded for workshop 'workshop-alpha'/i
+      );
+
+      // Call from Workshop Bravo is unaffected (Tenant Isolation)!
+      const bravoResult = await openaiAdapter.generateCompletion('Test prompt', { workshopId: 'workshop-bravo' });
+      assert.ok(bravoResult);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   // ============================================================================

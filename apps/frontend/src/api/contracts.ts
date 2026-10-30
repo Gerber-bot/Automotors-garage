@@ -81,25 +81,13 @@ export const QuickServiceEntrySchema = z.object({
   selectedVehicleId: z.string().min(1, 'Vehicle selection is required'),
   odometerKm: z.number().min(0, 'Mileage cannot be negative'),
   selectedInterventions: z.array(z.string()).min(1, 'Select at least one service performed'),
-  voiceNotesAudioBlob: z.instanceof(Blob).optional(),
-  transcribedObservations: z.string().optional(),
+  observations: z.string().optional(),
   requiresConfirmation: z.boolean().default(true),
   humanConfirmed: z.boolean().refine((val) => val === true, {
     message: 'Technician must review and confirm details before finalizing service record.',
   }),
 });
 export type QuickServiceEntry = z.infer<typeof QuickServiceEntrySchema>;
-
-// Voice Proposal Schema
-export const AIProposalSchema = z.object({
-  odometerKm: z.number().nonnegative(),
-  workPerformed: z.array(z.string()),
-  suggestedNextServiceKm: z.number().optional(),
-  diagnosisNotes: z.string().optional(),
-  confidence: z.number(),
-  requiresConfirmation: z.literal(true),
-});
-export type AIProposal = z.infer<typeof AIProposalSchema>;
 
 // OBD-II Diagnostics Contracts
 export interface ObdSensorReading {
@@ -149,5 +137,50 @@ export interface ObdAiAnalysis {
   urgencyLevel: 'IMMEDIATE_ACTION' | 'ATTENTION_NEEDED' | 'MONITOR';
   mechanicChecklist: string[];
   disclaimer: string;
+}
+
+export const ObdAiAnalysisSchema = z.object({
+  codesAnalyzed: z.array(z.string()),
+  systemicImpact: z.string(),
+  urgencyLevel: z.enum(['IMMEDIATE_ACTION', 'ATTENTION_NEEDED', 'MONITOR']),
+  mechanicChecklist: z.array(z.string()),
+  disclaimer: z.string(),
+});
+
+export interface HistorySummary {
+  vehicleId: string;
+  totalRecordsAnalyzed: number;
+  mainInterventions: string[];
+  recentServices: Array<{ date: string; title: string; mileage: number; isCertified: boolean }>;
+  recurringRepairs: string[];
+  relevantObservations: string[];
+  dataLimitations: string[];
+  referencedRecordIds: string[];
+  generatedAt: string;
+  isAiGenerated: boolean;
+  providerName: string;
+}
+
+export interface MaintenanceExplanation {
+  category: string;
+  title: string;
+  status: string;
+  nextDueMileage: number | null;
+  remainingKm: number | null;
+  nextDueDate: string | null;
+  explanation: string;
+  basis: string[];
+  uncertainty: string;
+  dataLimitations: string[];
+  disclaimer: string;
+  isAiGenerated: boolean;
+  providerName: string;
+}
+
+export interface AIStatus {
+  isConfigured: boolean;
+  providerName: string;
+  model: string;
+  message: string;
 }
 

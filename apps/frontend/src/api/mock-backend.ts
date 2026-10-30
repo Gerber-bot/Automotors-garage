@@ -1,4 +1,4 @@
-import type { Vehicle, WorkOrder, AIProposal } from './contracts.ts';
+import type { Vehicle, WorkOrder } from './contracts.ts';
 
 /**
  * NOTICE: [OFFLINE_DEVELOPMENT_MOCK]
@@ -92,12 +92,3 @@ export const MOCK_WORK_ORDERS: WorkOrder[] = [
     evidenceAssetIds: [],
   },
 ];
-
-export const MOCK_VOICE_PROPOSAL: AIProposal = {
-  odometerKm: 35000,
-  workPerformed: ['oil_change', 'oil_filter_replacement', 'brake_pads_check'],
-  suggestedNextServiceKm: 45000,
-  diagnosisNotes: 'Cambié aceite sintético 0W20 y filtro. Pastillas delanteras con 4 mm de espesor restante.',
-  confidence: 0.97,
-  requiresConfirmation: true,
-};

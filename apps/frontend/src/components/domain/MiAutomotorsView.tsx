@@ -20,6 +20,7 @@ import {
   Sparkles,
   Phone,
   Mail,
+  HelpCircle,
 } from 'lucide-react';
 import {
   Card,
@@ -36,6 +37,10 @@ import {
   type OwnerTimelineEntry,
   type OwnerPredictionItem,
 } from '../../api/client.ts';
+import type {
+  HistorySummary,
+  MaintenanceExplanation,
+} from '../../api/contracts.ts';
 import { useAuth } from '../../context/AuthContext.tsx';
 
 export type OwnerTabId = 'garage' | 'history' | 'predictions' | 'profile';
@@ -114,6 +119,48 @@ export function MiAutomotorsView() {
   // Profile form state
   const [profFullName, setProfFullName] = React.useState(user?.fullName ?? '');
   const [profPhone, setProfPhone] = React.useState(user?.phone ?? '');
+
+  // Contextual AI Feature 1: History Summary
+  const [historySummary, setHistorySummary] = React.useState<HistorySummary | null>(null);
+  const [isSummaryModalOpen, setIsSummaryModalOpen] = React.useState<boolean>(false);
+  const [isLoadingSummary, setIsLoadingSummary] = React.useState<boolean>(false);
+  const [summaryError, setSummaryError] = React.useState<string | null>(null);
+
+  const handleOpenSummary = async () => {
+    if (!selectedVehicleId) return;
+    setIsSummaryModalOpen(true);
+    setIsLoadingSummary(true);
+    setSummaryError(null);
+    try {
+      const summary = await apiClient.getOwnerHistorySummary(selectedVehicleId);
+      setHistorySummary(summary);
+    } catch (err: any) {
+      setSummaryError(err?.message || 'No se pudo generar el resumen del historial.');
+    } finally {
+      setIsLoadingSummary(false);
+    }
+  };
+
+  // Contextual AI Feature 2: Maintenance Prediction Explanation
+  const [maintenanceExplanation, setMaintenanceExplanation] = React.useState<MaintenanceExplanation | null>(null);
+  const [isExplanationModalOpen, setIsExplanationModalOpen] = React.useState<boolean>(false);
+  const [isLoadingExplanation, setIsLoadingExplanation] = React.useState<boolean>(false);
+  const [explanationError, setExplanationError] = React.useState<string | null>(null);
+
+  const handleOpenExplanation = async (category: string) => {
+    if (!selectedVehicleId) return;
+    setIsExplanationModalOpen(true);
+    setIsLoadingExplanation(true);
+    setExplanationError(null);
+    try {
+      const explanation = await apiClient.explainOwnerMaintenance(selectedVehicleId, category);
+      setMaintenanceExplanation(explanation);
+    } catch (err: any) {
+      setExplanationError(err?.message || 'No se pudo generar la explicación del mantenimiento.');
+    } finally {
+      setIsLoadingExplanation(false);
+    }
+  };
 
   React.useEffect(() => {
     if (user) {
@@ -687,17 +734,27 @@ export function MiAutomotorsView() {
                 </p>
               </div>
               {selectedVehicle && (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  leftIcon={<Plus className="h-4 w-4" />}
-                  onClick={() => {
-                    setMaintMileage(String(selectedVehicle.currentMileage));
-                    setIsAddMaintOpen(true);
-                  }}
-                >
-                  Registrar Mantenimiento Manual
-                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    leftIcon={<Sparkles className="h-4 w-4 text-emerald-400" />}
+                    onClick={handleOpenSummary}
+                  >
+                    Resumen Inteligente
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    leftIcon={<Plus className="h-4 w-4" />}
+                    onClick={() => {
+                      setMaintMileage(String(selectedVehicle.currentMileage));
+                      setIsAddMaintOpen(true);
+                    }}
+                  >
+                    Registrar Mantenimiento Manual
+                  </Button>
+                </div>
               )}
             </div>
 
@@ -1002,6 +1059,17 @@ export function MiAutomotorsView() {
                             {pred.sourceCitation}
                           </span>
                         )}
+                      </div>
+
+                      <div className="pt-2 flex justify-end">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          leftIcon={<HelpCircle className="h-3.5 w-3.5 text-sky-400" />}
+                          onClick={() => handleOpenExplanation(pred.category)}
+                        >
+                          Explicar Proyección
+                        </Button>
                       </div>
                     </Card>
                   );
@@ -1496,6 +1564,267 @@ export function MiAutomotorsView() {
             </Button>
           </div>
         </form>
+      </Dialog>
+
+      {/* MODAL 5: RESUMEN INTELIGENTE DEL HISTORIAL */}
+      <Dialog
+        isOpen={isSummaryModalOpen}
+        onClose={() => setIsSummaryModalOpen(false)}
+        title="Resumen Inteligente del Historial Vehicular"
+        description="Síntesis técnica estructurada basada exclusivamente en los registros verificados en la plataforma."
+      >
+        <div className="space-y-4">
+          {isLoadingSummary && (
+            <LoadingState label="Generando resumen estructurado a partir del historial..." />
+          )}
+
+          {summaryError && (
+            <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 shrink-0 text-rose-400" />
+              <span>{summaryError}</span>
+            </div>
+          )}
+
+          {!isLoadingSummary && historySummary && (
+            <div className="space-y-4 text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                <div className="flex items-center gap-2">
+                  <Badge variant={historySummary.isAiGenerated ? 'success' : 'secondary'} size="sm">
+                    {historySummary.isAiGenerated ? 'IA ASISTIDA' : 'MOTOR DETERMINISTA'}
+                  </Badge>
+                  <span className="text-slate-400 text-[11px] font-mono">
+                    {historySummary.providerName}
+                  </span>
+                </div>
+                <span className="text-slate-400 text-[11px]">
+                  {historySummary.totalRecordsAnalyzed} registros analizados
+                </span>
+              </div>
+
+              {/* Intervenciones Principales */}
+              <div className="space-y-1.5">
+                <span className="text-slate-300 font-bold block">Intervenciones Principales Detectadas</span>
+                {historySummary.mainInterventions.length === 0 ? (
+                  <p className="text-slate-500 italic">No se registraron intervenciones mayores.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {historySummary.mainInterventions.map((item, idx) => (
+                      <Badge key={idx} variant="secondary" size="sm">
+                        {item}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Servicios Recientes */}
+              {historySummary.recentServices.length > 0 && (
+                <div className="space-y-1.5">
+                  <span className="text-slate-300 font-bold block">Últimos Servicios Realizados</span>
+                  <div className="space-y-1.5">
+                    {historySummary.recentServices.map((svc, idx) => (
+                      <div
+                        key={idx}
+                        className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between gap-2"
+                      >
+                        <div>
+                          <span className="text-white font-medium block">{svc.title}</span>
+                          <span className="text-slate-400 text-[11px]">
+                            {svc.date} · {svc.mileage.toLocaleString('es-AR')} km
+                          </span>
+                        </div>
+                        {svc.isCertified ? (
+                          <Badge variant="success" size="sm">
+                            Certificado
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary" size="sm">
+                            Declarado
+                          </Badge>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Reparaciones Recurrentes */}
+              {historySummary.recurringRepairs.length > 0 && (
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 space-y-1 text-amber-300">
+                  <span className="font-bold flex items-center gap-1.5">
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    Patrones de Reparación Recurrente
+                  </span>
+                  <ul className="list-disc list-inside space-y-0.5 text-[11px]">
+                    {historySummary.recurringRepairs.map((r, idx) => (
+                      <li key={idx}>{r}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Observaciones Técnicas Relevantes */}
+              {historySummary.relevantObservations.length > 0 && (
+                <div className="space-y-1.5">
+                  <span className="text-slate-300 font-bold block">Notas Técnicas de Talleres</span>
+                  <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 space-y-1 text-slate-300 text-[11px]">
+                    {historySummary.relevantObservations.map((obs, idx) => (
+                      <p key={idx} className="italic">
+                        &ldquo;{obs}&rdquo;
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Limitaciones de los Datos */}
+              {historySummary.dataLimitations.length > 0 && (
+                <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-[11px] text-slate-400 space-y-1">
+                  <span className="font-semibold text-slate-300 block">Limitaciones de Información</span>
+                  <ul className="list-disc list-inside space-y-0.5">
+                    {historySummary.dataLimitations.map((lim, idx) => (
+                      <li key={idx}>{lim}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <div className="pt-2 text-[10px] text-slate-500 text-right">
+                Trazabilidad: {historySummary.referencedRecordIds.length} eventos contrastados con el libro de mantenimiento.
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-end pt-2 border-t border-slate-800">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setIsSummaryModalOpen(false)}
+            >
+              Cerrar Resumen
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      {/* MODAL 6: EXPLICACIÓN DE MANTENIMIENTO PREVENTIVO */}
+      <Dialog
+        isOpen={isExplanationModalOpen}
+        onClose={() => setIsExplanationModalOpen(false)}
+        title={maintenanceExplanation?.title ?? 'Explicación del Mantenimiento'}
+        description="Detalle técnico de la proyección determinística conforme a pautas de fabricante y kilometraje."
+      >
+        <div className="space-y-4">
+          {isLoadingExplanation && (
+            <LoadingState label="Generando desglose técnico de la proyección preventiva..." />
+          )}
+
+          {explanationError && (
+            <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 shrink-0 text-rose-400" />
+              <span>{explanationError}</span>
+            </div>
+          )}
+
+          {!isLoadingExplanation && maintenanceExplanation && (
+            <div className="space-y-3.5 text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                <Badge
+                  variant={
+                    maintenanceExplanation.status === 'OVERDUE' || maintenanceExplanation.status === 'DUE_NOW'
+                      ? 'danger'
+                      : maintenanceExplanation.status === 'UPCOMING_SOON'
+                      ? 'warning'
+                      : maintenanceExplanation.status === 'INSUFFICIENT_DATA'
+                      ? 'secondary'
+                      : 'success'
+                  }
+                  size="sm"
+                >
+                  {maintenanceExplanation.status}
+                </Badge>
+                <div className="flex items-center gap-2">
+                  <Badge variant={maintenanceExplanation.isAiGenerated ? 'success' : 'secondary'} size="sm">
+                    {maintenanceExplanation.isAiGenerated ? 'IA ASISTIDA' : 'MOTOR DETERMINISTA'}
+                  </Badge>
+                  <span className="text-slate-400 text-[10px] font-mono">
+                    {maintenanceExplanation.providerName}
+                  </span>
+                </div>
+              </div>
+
+              {/* Proyecciones numéricas (inmutables) */}
+              <div className="grid grid-cols-2 gap-2.5">
+                <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                  <span className="text-[10px] text-slate-400 block uppercase">Próximo Kilometraje</span>
+                  <span className="text-sm font-extrabold font-mono text-white">
+                    {maintenanceExplanation.nextDueMileage !== null
+                      ? `${maintenanceExplanation.nextDueMileage.toLocaleString('es-AR')} km`
+                      : 'Sin calcular'}
+                  </span>
+                  <span className="text-[11px] text-slate-400 block">
+                    {maintenanceExplanation.remainingKm !== null
+                      ? maintenanceExplanation.remainingKm >= 0
+                        ? `Restan ${maintenanceExplanation.remainingKm.toLocaleString('es-AR')} km`
+                        : `Vencido por ${Math.abs(maintenanceExplanation.remainingKm).toLocaleString('es-AR')} km`
+                      : 'Faltan datos de base'}
+                  </span>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                  <span className="text-[10px] text-slate-400 block uppercase">Fecha Proyectada</span>
+                  <span className="text-sm font-bold text-white">
+                    {maintenanceExplanation.nextDueDate ?? 'Sin fecha'}
+                  </span>
+                  <span className="text-[11px] text-slate-400 block">
+                    Calculado por tasa de uso mensual
+                  </span>
+                </div>
+              </div>
+
+              {/* Explicación textual */}
+              <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 leading-relaxed text-slate-200">
+                {maintenanceExplanation.explanation}
+              </div>
+
+              {/* Fundamentos Técnicos */}
+              {maintenanceExplanation.basis.length > 0 && (
+                <div className="space-y-1">
+                  <span className="text-slate-300 font-bold block">Fundamentos del Cálculo</span>
+                  <ul className="list-disc list-inside space-y-0.5 text-slate-400 text-[11px]">
+                    {maintenanceExplanation.basis.map((b, idx) => (
+                      <li key={idx}>{b}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Nivel de Incertidumbre */}
+              <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between text-[11px]">
+                <span className="text-slate-400">Nivel de Confianza:</span>
+                <span className="font-bold text-slate-200">{maintenanceExplanation.uncertainty}</span>
+              </div>
+
+              {/* Descargo Técnico Obligatorio */}
+              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-start gap-2.5 text-amber-300 text-[11px]">
+                <Info className="h-4 w-4 shrink-0 text-amber-400 mt-0.5" />
+                <p className="leading-relaxed">{maintenanceExplanation.disclaimer}</p>
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-end pt-2 border-t border-slate-800">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setIsExplanationModalOpen(false)}
+            >
+              Entendido
+            </Button>
+          </div>
+        </div>
       </Dialog>
     </div>
   );

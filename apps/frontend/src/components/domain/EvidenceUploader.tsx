@@ -52,10 +52,10 @@ export function EvidenceUploader({ onFilesUploaded }: EvidenceUploaderProps) {
         <span className="text-xs font-medium text-slate-300">
           {isUploading ? 'Calculando hash y subiendo...' : 'Capturar foto o subir evidencia'}
         </span>
-        <span className="text-[10px] text-slate-500 mt-0.5">JPG, PNG o MP3 (Máx. 25MB)</span>
+        <span className="text-[10px] text-slate-500 mt-0.5">JPG, PNG o PDF (Máx. 25MB)</span>
         <input
           type="file"
-          accept="image/*,audio/*"
+          accept="image/*,application/pdf"
           capture="environment"
           onChange={handleSimulatedUpload}
           className="hidden"
