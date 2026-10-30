@@ -35,13 +35,16 @@ export interface LoginResponse {
   session: {
     id: string;
     expiresAt: string;
-    activeTenantId: string;
+    activeTenantId: string | null;
   };
   user: {
     id: string;
     email: string;
     fullName: string;
+    phone?: string | null;
     role: string;
+    accountType?: 'WORKSHOP_USER' | 'VEHICLE_OWNER';
+    profiles?: string[];
     workshops: Array<{ id: string; name: string; role: string }>;
   };
 }
@@ -51,14 +54,88 @@ export interface CurrentUserResponse {
     id: string;
     email: string;
     fullName?: string;
+    phone?: string | null;
+    role?: string;
+    accountType?: 'WORKSHOP_USER' | 'VEHICLE_OWNER';
+    profiles?: string[];
   };
-  activeTenantId: string;
+  activeTenantId: string | null;
   workshops: Array<{
     workshopId: string;
     workshopName: string;
     role: string;
     permissions?: string[];
   }>;
+}
+
+export interface OwnerVehicle {
+  id: string;
+  vin: string | null;
+  plate: string | null;
+  make: string;
+  model: string;
+  year: number;
+  engine: string | null;
+  fuelType: string;
+  currentMileage: number;
+  ownerUserId: string;
+  transmission?: string;
+  distributionType?: string;
+  exactEngineCode?: string;
+  technicalProfile?: {
+    profileId: string;
+    exactEngineCodeStatus: 'CONFIRMED' | 'PENDING_CONFIRMATION';
+    exactEngineCodeNote: string;
+    transmission: string;
+    distributionType: string;
+    distributionNote: string;
+    isProfileComplete: boolean;
+  } | null;
+}
+
+export interface OwnerTimelineEntry {
+  id: string;
+  vehicleId: string;
+  serviceDate: string;
+  createdAt?: string;
+  recordedMileage: number;
+  recordedByUserId?: string | null;
+  category: string;
+  title: string;
+  description: string;
+  interventions: Array<{ title: string; category: string; description: string }>;
+  workshopName: string;
+  recordOrigin: 'WORKSHOP_CERTIFIED' | 'OWNER_DECLARED';
+  verificationLevel: string;
+  isCertified: boolean;
+  observations: string | null;
+  cost: number | null;
+  corrections: Array<{
+    id: string;
+    actorName: string;
+    reason: string;
+    previousData: Record<string, unknown>;
+    correctedData: Record<string, unknown>;
+    createdAt: string;
+  }>;
+}
+
+export interface OwnerPredictionItem {
+  category: string;
+  label: string;
+  shortDescription: string;
+  status: 'INSUFFICIENT_DATA' | 'OK' | 'UPCOMING_SOON' | 'DUE_NOW' | 'OVERDUE';
+  nextDueMileage: number | null;
+  remainingKm: number | null;
+  nextDueDate: string | null;
+  estimatedDaysRemaining: number | null;
+  dueReason: string;
+  confidence: string;
+  sourceCitation: string | null;
+  lastServiceDate: string | null;
+  lastServiceMileage: number | null;
+  message: string | null;
+  technicalNote: string | null;
 }
 
 export class ApiClient {
@@ -89,7 +166,7 @@ export class ApiClient {
     this.useOfflineMockFallback = enabled;
   }
 
-  public setAuthSession(token: string, tenantId: string): void {
+  public setAuthSession(token: string, tenantId: string | null): void {
     this.token = token;
     this.activeTenantId = tenantId;
   }
@@ -183,6 +260,24 @@ export class ApiClient {
   }
 
   // Authentication
+  public async registerOwner(
+    payload: {
+      fullName: string;
+      email: string;
+      password: string;
+      phone?: string;
+    },
+    signal?: AbortSignal
+  ): Promise<LoginResponse> {
+    const res = await this.request<LoginResponse>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      signal,
+    });
+    this.setAuthSession(res.token, res.session.activeTenantId ?? null);
+    return res;
+  }
+
   public async login(
     email: string,
     password: string,
@@ -194,7 +289,7 @@ export class ApiClient {
       body: JSON.stringify({ email, password, workshopId }),
       signal,
     });
-    this.setAuthSession(res.token, res.session.activeTenantId);
+    this.setAuthSession(res.token, res.session.activeTenantId ?? null);
     return res;
   }
 
@@ -472,5 +567,134 @@ export class ApiClient {
       body: JSON.stringify(params),
       signal,
     });
+  }
+
+  // Domain API Methods: Mi Automotors (Owner Portal)
+  public async getOwnerProfile(signal?: AbortSignal): Promise<{
+    id: string;
+    email: string;
+    fullName: string;
+    phone: string | null;
+    createdAt: string | null;
+    accountType: 'WORKSHOP_USER' | 'VEHICLE_OWNER';
+    profiles: string[];
+    vehiclesCount: number;
+  }> {
+    return this.request('/owner/profile', { method: 'GET', signal });
+  }
+
+  public async updateOwnerProfile(
+    payload: { fullName?: string; phone?: string },
+    signal?: AbortSignal
+  ): Promise<{ id: string; email: string; fullName: string; phone: string | null }> {
+    return this.request('/owner/profile', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+      signal,
+    });
+  }
+
+  public async getOwnerVehicles(signal?: AbortSignal): Promise<OwnerVehicle[]> {
+    return this.request<OwnerVehicle[]>('/owner/vehicles', { method: 'GET', signal });
+  }
+
+  public async createOwnerVehicle(
+    payload: {
+      make: string;
+      model: string;
+      year: number;
+      plate: string;
+      currentMileage: number;
+      engine?: string;
+      fuelType?: string;
+      vin?: string;
+      transmission?: string;
+      distributionType?: string;
+      exactEngineCode?: string;
+    },
+    signal?: AbortSignal
+  ): Promise<OwnerVehicle> {
+    return this.request<OwnerVehicle>('/owner/vehicles', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      signal,
+    });
+  }
+
+  public async getOwnerVehicleById(vehicleId: string, signal?: AbortSignal): Promise<OwnerVehicle> {
+    return this.request<OwnerVehicle>(`/owner/vehicles/${vehicleId}`, { method: 'GET', signal });
+  }
+
+  public async updateOwnerVehicle(
+    vehicleId: string,
+    payload: Partial<OwnerVehicle>,
+    signal?: AbortSignal
+  ): Promise<OwnerVehicle> {
+    return this.request<OwnerVehicle>(`/owner/vehicles/${vehicleId}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+      signal,
+    });
+  }
+
+  public async getOwnerVehicleHistory(
+    vehicleId: string,
+    signal?: AbortSignal
+  ): Promise<{
+    vehicle: OwnerVehicle;
+    totalRecords: number;
+    certifiedCount: number;
+    declaredCount: number;
+    timeline: OwnerTimelineEntry[];
+  }> {
+    return this.request(`/owner/vehicles/${vehicleId}/history`, { method: 'GET', signal });
+  }
+
+  public async createOwnerMaintenanceRecord(
+    vehicleId: string,
+    payload: {
+      category: string;
+      title?: string;
+      description: string;
+      recordedMileage: number;
+      serviceDate?: string;
+      workshopName?: string;
+      cost?: number;
+      observations?: string;
+    },
+    signal?: AbortSignal
+  ): Promise<OwnerTimelineEntry> {
+    return this.request<OwnerTimelineEntry>(`/owner/vehicles/${vehicleId}/maintenance`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      signal,
+    });
+  }
+
+  public async createOwnerMaintenanceCorrection(
+    recordId: string,
+    payload: {
+      reason: string;
+      correctedData: Record<string, unknown>;
+    },
+    signal?: AbortSignal
+  ): Promise<{ correction: any }> {
+    return this.request(`/owner/maintenance/${recordId}/corrections`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      signal,
+    });
+  }
+
+  public async getOwnerVehiclePredictions(
+    vehicleId: string,
+    signal?: AbortSignal
+  ): Promise<{
+    vehicle: OwnerVehicle;
+    estimatedMonthlyKm: number;
+    insufficientDataMessage: string;
+    predictions: OwnerPredictionItem[];
+  }> {
+    return this.request(`/owner/vehicles/${vehicleId}/predictions`, { method: 'GET', signal });
   }
 }

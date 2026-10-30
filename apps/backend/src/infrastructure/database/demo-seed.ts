@@ -30,6 +30,7 @@ export const DEMO_IDS = {
   USER_MARIO: 'b0000000-0000-4000-8000-000000000001',
   USER_LUCAS: 'b0000000-0000-4000-8000-000000000002',
   USER_BETA_CARLOS: 'b0000000-0000-4000-8000-000000000003',
+  USER_OWNER_VALERIA: 'b0000000-0000-4000-8000-000000000004',
   CUSTOMER_DEMO_VIP: 'c0000000-0000-4000-8000-000000000001',
   CUSTOMER_CARLA: 'c0000000-0000-4000-8000-000000000002',
   CUSTOMER_ESTEBAN: 'c0000000-0000-4000-8000-000000000003',
@@ -38,17 +39,25 @@ export const DEMO_IDS = {
   VEHICLE_FORD_RANGER: 'd0000000-0000-4000-8000-000000000003',
   VEHICLE_PEUGEOT_208: 'd0000000-0000-4000-8000-000000000004',
   VEHICLE_HONDA_CIVIC: 'd0000000-0000-4000-8000-000000000005',
+  VEHICLE_RENAULT_LOGAN_OWNER: 'd0000000-0000-4000-8000-000000000006',
   WO_VW_GOLF_45K: 'e0000000-0000-4000-8000-000000000001',
   WO_TOYOTA_30K: 'e0000000-0000-4000-8000-000000000002',
   WO_RANGER_92K: 'e0000000-0000-4000-8000-000000000003',
   WO_PEUGEOT_41K: 'e0000000-0000-4000-8000-000000000004',
   REC_VW_GOLF_45K: '10000000-0000-4000-8000-000000000001',
   REC_TOYOTA_30K: '10000000-0000-4000-8000-000000000002',
+  REC_LOGAN_30K_CERTIFIED: '10000000-0000-4000-8000-000000000003',
+  REC_LOGAN_40K_OWNER: '10000000-0000-4000-8000-000000000004',
   RULE_VW_OIL: '20000000-0000-4000-8000-000000000001',
   RULE_VW_SPARK: '20000000-0000-4000-8000-000000000002',
   RULE_TOYOTA_OIL: '20000000-0000-4000-8000-000000000003',
   RULE_TOYOTA_BRAKES: '20000000-0000-4000-8000-000000000004',
   RULE_FORD_OIL: '20000000-0000-4000-8000-000000000005',
+  RULE_LOGAN_OIL: '20000000-0000-4000-8000-000000000006',
+  RULE_LOGAN_FILTERS: '20000000-0000-4000-8000-000000000007',
+  RULE_LOGAN_BRAKES: '20000000-0000-4000-8000-000000000008',
+  RULE_LOGAN_SPARK: '20000000-0000-4000-8000-000000000009',
+  RULE_LOGAN_COOLANT: '20000000-0000-4000-8000-000000000010',
 };
 
 export class DemoSeeder {
@@ -117,6 +126,14 @@ export class DemoSeeder {
           passwordHash: defaultPasswordHash,
           fullName: 'Carlos Bianchi (Mecánico Beta)',
           phone: '+54 9 11 5555-3333',
+          isActive: true,
+        },
+        {
+          id: DEMO_IDS.USER_OWNER_VALERIA,
+          email: 'valeria@miautomotors.com',
+          passwordHash: defaultPasswordHash,
+          fullName: 'Valeria Méndez',
+          phone: '+54 9 11 6789-4321',
           isActive: true,
         },
       ])
@@ -254,6 +271,25 @@ export class DemoSeeder {
           currentMileage: 78000,
           metadata: { isDemoData: true },
         },
+        {
+          id: DEMO_IDS.VEHICLE_RENAULT_LOGAN_OWNER,
+          vin: '8A1LSRB05L0002020',
+          plate: 'AE202LG',
+          make: 'Renault',
+          model: 'Logan II Zen 1.6 16v SCe',
+          year: 2020,
+          engine: '1.6 16v SCe (H4M / HR16 probable)',
+          fuelType: 'Nafta Super',
+          currentMileage: 46800,
+          ownerUserId: DEMO_IDS.USER_OWNER_VALERIA,
+          metadata: {
+            isDemoData: true,
+            isOwnerPortalVehicle: true,
+            transmission: 'Manual (5 velocidades)',
+            distributionType: 'CADENA',
+            exactEngineCode: 'H4M / HR16 — pendiente de confirmación documental',
+          },
+        },
       ])
       .onConflictDoNothing();
 
@@ -343,6 +379,61 @@ export class DemoSeeder {
           intervalKm: 10000,
           intervalMonths: 12,
           sourceCitation: 'Guía de Mantenimiento Programado Ford Ranger (pág. 68)',
+        },
+        {
+          id: DEMO_IDS.RULE_LOGAN_OIL,
+          make: 'Renault',
+          model: 'Logan',
+          year: 2020,
+          engine: '1.6',
+          category: 'OIL_AND_FILTER',
+          intervalKm: 10000,
+          intervalMonths: 12,
+          sourceCitation: 'Manual de Mantenimiento Renault Argentina — Plan 10.000 km / 1 año',
+        },
+        {
+          id: DEMO_IDS.RULE_LOGAN_FILTERS,
+          make: 'Renault',
+          model: 'Logan',
+          year: 2020,
+          engine: '1.6',
+          category: 'AIR_AND_CABIN_FILTERS',
+          intervalKm: 10000,
+          intervalMonths: 12,
+          sourceCitation: 'Manual de Mantenimiento Renault Argentina — Sección Filtrado',
+        },
+        {
+          id: DEMO_IDS.RULE_LOGAN_BRAKES,
+          make: 'Renault',
+          model: 'Logan',
+          year: 2020,
+          engine: '1.6',
+          category: 'BRAKES',
+          intervalKm: 30000,
+          intervalMonths: 24,
+          sourceCitation: 'Guía Técnica de Seguridad Activa Renault — Sistema de Frenos',
+        },
+        {
+          id: DEMO_IDS.RULE_LOGAN_SPARK,
+          make: 'Renault',
+          model: 'Logan',
+          year: 2020,
+          engine: '1.6',
+          category: 'SPARK_PLUGS',
+          intervalKm: 40000,
+          intervalMonths: 36,
+          sourceCitation: 'Plan de Mantenimiento Renault 1.6 16v — Sistema de Encendido',
+        },
+        {
+          id: DEMO_IDS.RULE_LOGAN_COOLANT,
+          make: 'Renault',
+          model: 'Logan',
+          year: 2020,
+          engine: '1.6',
+          category: 'COOLANT',
+          intervalKm: 60000,
+          intervalMonths: 48,
+          sourceCitation: 'Especificación Técnica Renault Glaceol RX Type D',
         },
       ])
       .onConflictDoNothing();
@@ -526,14 +617,76 @@ export class DemoSeeder {
       })
       .onConflictDoNothing();
 
+    // 7e. Owner Portal Demo Records for Renault Logan 1.6 2020 (1 Workshop Certified + 1 Owner Declared)
+    await this.db
+      .insert(maintenanceRecords)
+      .values([
+        {
+          id: DEMO_IDS.REC_LOGAN_30K_CERTIFIED,
+          vehicleId: DEMO_IDS.VEHICLE_RENAULT_LOGAN_OWNER,
+          performingWorkshopId: DEMO_IDS.WORKSHOP_ALPHA,
+          performingWorkshopName: 'Alpha Motors Garage (Red Certificada)',
+          recordOrigin: 'WORKSHOP_CERTIFIED',
+          serviceDate: new Date('2025-02-15T11:00:00Z'),
+          recordedMileage: 30000,
+          verificationLevel: 'IDENTIFIED_WORKSHOP',
+          isCertified: true,
+          criteriaMet: ['Work performed and signed by verified Automotors registered workshop'],
+          interventions: [
+            {
+              title: 'Service Oficial 30.000 km: Aceite y Filtro + Revisión de Frenos',
+              category: 'OIL_AND_FILTER',
+              description: 'Cambio de aceite sintético 5W40, filtro de aceite original y control de pastillas delanteras.',
+            },
+            {
+              title: 'Inspección y regulación de sistema de frenos',
+              category: 'BRAKES',
+              description: 'Limpieza de campanas traseras y verificación de pastillas delanteras (70% restante).',
+            },
+          ],
+          internalNotes: 'Service de los 30.000 km completado según plan Renault.',
+          partsCost: '62000.00',
+          laborCost: '28000.00',
+        },
+        {
+          id: DEMO_IDS.REC_LOGAN_40K_OWNER,
+          vehicleId: DEMO_IDS.VEHICLE_RENAULT_LOGAN_OWNER,
+          performingWorkshopId: null,
+          performingWorkshopName: 'Lubricentro Belgrano (Declaración del Propietario)',
+          recordedByUserId: DEMO_IDS.USER_OWNER_VALERIA,
+          recordOrigin: 'OWNER_DECLARED',
+          serviceDate: new Date('2026-01-20T10:30:00Z'),
+          recordedMileage: 40200,
+          verificationLevel: 'DECLARED',
+          isCertified: false,
+          criteriaMet: ['Self-declared by owner without external workshop verification'],
+          interventions: [
+            {
+              title: 'Cambio de Aceite Sintético y Filtros de Aire / Habitáculo',
+              category: 'OIL_AND_FILTER',
+              description: 'Cambio preventivo a los 40.200 km con aceite Elf Evolution 5W40 y filtros.',
+            },
+            {
+              title: 'Reemplazo de Filtro de Aire y Polen',
+              category: 'AIR_AND_CABIN_FILTERS',
+              description: 'Filtro de admisión y habitáculo nuevos.',
+            },
+          ],
+          internalNotes: 'Realizado antes de viaje a la costa. Conservo comprobante en guantera.',
+          partsCost: '74000.00',
+          laborCost: '0.00',
+        },
+      ])
+      .onConflictDoNothing();
+
     return {
       workshopsCount: 2,
-      usersCount: 3,
+      usersCount: 4,
       customersCount: 3,
-      vehiclesCount: 5,
+      vehiclesCount: 6,
       workOrdersCount: 4,
-      maintenanceRecordsCount: 2,
-      intervalsCount: 5,
+      maintenanceRecordsCount: 4,
+      intervalsCount: 10,
     };
   }
 }

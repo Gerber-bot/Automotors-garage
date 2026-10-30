@@ -17,7 +17,7 @@ export class PostgresVehicleRepository implements IVehicleRepository {
   private mapToDomain(row: typeof vehicles.$inferSelect): Vehicle {
     const result = Vehicle.create(
       {
-        vin: row.vin,
+        vin: row.vin ?? undefined,
         plate: row.plate ?? undefined,
         make: row.make,
         model: row.model,
@@ -26,6 +26,7 @@ export class PostgresVehicleRepository implements IVehicleRepository {
         fuelType: (row.fuelType as any) ?? undefined,
         currentMileage: row.currentMileage,
         technicalSpecs: (row.metadata as Record<string, unknown>) ?? undefined,
+        ownerId: row.ownerUserId ?? undefined,
       },
       row.id
     );
@@ -46,6 +47,15 @@ export class PostgresVehicleRepository implements IVehicleRepository {
 
     const row = rows[0];
     return row ? this.mapToDomain(row) : null;
+  }
+
+  public async findByOwnerUserId(ownerUserId: string): Promise<readonly Vehicle[]> {
+    const rows = await (this.db as any)
+      .select()
+      .from(vehicles)
+      .where(eq(vehicles.ownerUserId, ownerUserId));
+
+    return rows.map((r: typeof vehicles.$inferSelect) => this.mapToDomain(r));
   }
 
   public async findByVin(vin: string): Promise<Vehicle | null> {
@@ -75,7 +85,7 @@ export class PostgresVehicleRepository implements IVehicleRepository {
       .insert(vehicles)
       .values({
         id: vehicle.id,
-        vin: vehicle.vin!,
+        vin: vehicle.vin ?? null,
         plate: vehicle.plate ?? null,
         make: vehicle.make,
         model: vehicle.model,
@@ -83,12 +93,14 @@ export class PostgresVehicleRepository implements IVehicleRepository {
         engine: vehicle.engine ?? null,
         fuelType: vehicle.fuelType ?? null,
         currentMileage: vehicle.currentMileage,
+        ownerUserId: vehicle.ownerId ?? null,
         metadata: vehicle.technicalSpecs ?? {},
         updatedAt: new Date(),
       })
       .onConflictDoUpdate({
         target: vehicles.id,
         set: {
+          vin: vehicle.vin ?? null,
           plate: vehicle.plate ?? null,
           make: vehicle.make,
           model: vehicle.model,
@@ -96,6 +108,7 @@ export class PostgresVehicleRepository implements IVehicleRepository {
           engine: vehicle.engine ?? null,
           fuelType: vehicle.fuelType ?? null,
           currentMileage: vehicle.currentMileage,
+          ownerUserId: vehicle.ownerId ?? null,
           metadata: vehicle.technicalSpecs ?? {},
           updatedAt: new Date(),
         },

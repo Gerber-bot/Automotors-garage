@@ -6,10 +6,11 @@ import { DashboardView } from '../components/domain/DashboardView.tsx';
 import { VehiclesView } from '../components/domain/VehiclesView.tsx';
 import { ServiceQuickEntry } from '../components/domain/ServiceQuickEntry.tsx';
 import { DiagnosticsView } from '../components/domain/DiagnosticsView.tsx';
+import { MiAutomotorsView } from '../components/domain/MiAutomotorsView.tsx';
 import { LoginView } from '../components/domain/LoginView.tsx';
 import { EmptyState, Button, LoadingState } from '../components/ui/index.ts';
 import { useAuth } from '../context/AuthContext.tsx';
-import { Wrench, ArrowLeft, ShieldCheck } from 'lucide-react';
+import { Wrench, ArrowLeft, ShieldCheck, CarFront } from 'lucide-react';
 
 export default function HomePage() {
   const {
@@ -18,6 +19,8 @@ export default function HomePage() {
     isLoading,
     activeWorkshop,
     workshops,
+    activePortal,
+    setActivePortal,
     selectWorkshop,
     logout,
   } = useAuth();
@@ -31,8 +34,14 @@ export default function HomePage() {
       if (screenParam) {
         setCurrentScreen(screenParam);
       }
+      const portalParam = params.get('portal');
+      if (portalParam === 'owner') {
+        setActivePortal('OWNER');
+      } else if (portalParam === 'workshop' && workshops.length > 0) {
+        setActivePortal('WORKSHOP');
+      }
     }
-  }, []);
+  }, [setActivePortal, workshops.length]);
 
   // Loading Session Recovery
   if (isLoading && !user) {
@@ -46,16 +55,27 @@ export default function HomePage() {
     );
   }
 
-  // Unauthenticated State: Show Login
+  // Unauthenticated State: Show Login / Owner Registration
   if (!isAuthenticated || !user) {
     return <LoginView />;
   }
 
-  // Authenticated State: Show AppShell and Requested Screen
+  // Mi Automotors Portal (Vehicle Owner Experience)
+  if (activePortal === 'OWNER' || workshops.length === 0) {
+    return <MiAutomotorsView />;
+  }
+
+  // Authenticated Workshop State: Show AppShell (Automotors Pro)
   return (
     <AppShell
       currentScreen={currentScreen}
-      onNavigate={(screenId: string) => setCurrentScreen(screenId)}
+      onNavigate={(screenId: string) => {
+        if (screenId === 'mi-automotors') {
+          setActivePortal('OWNER');
+          return;
+        }
+        setCurrentScreen(screenId);
+      }}
       workshopName={activeWorkshop?.name || 'Taller Central'}
       operatorName={user.fullName || user.email}
       roleName={user.role || 'Mecánico'}
@@ -64,6 +84,17 @@ export default function HomePage() {
       onSelectWorkshop={selectWorkshop}
       onLogout={logout}
     >
+      <div className="mb-3 flex items-center justify-end">
+        <Button
+          variant="secondary"
+          size="sm"
+          leftIcon={<CarFront className="h-3.5 w-3.5 text-sky-400" />}
+          onClick={() => setActivePortal('OWNER')}
+        >
+          Ir a Mi Automotors (Portal Propietario)
+        </Button>
+      </div>
+
       {currentScreen === 'dashboard' ? (
         <DashboardView
           onQuickServiceClick={() => setCurrentScreen('quick-service')}

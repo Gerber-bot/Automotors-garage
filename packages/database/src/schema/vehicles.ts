@@ -15,7 +15,7 @@ export const vehicles = pgTable(
   'vehicles',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    vin: varchar('vin', { length: 17 }).notNull(),
+    vin: varchar('vin', { length: 17 }),
     plate: varchar('plate', { length: 20 }),
     make: varchar('make', { length: 100 }).notNull(),
     model: varchar('model', { length: 100 }).notNull(),
@@ -23,6 +23,7 @@ export const vehicles = pgTable(
     engine: varchar('engine', { length: 100 }),
     fuelType: varchar('fuel_type', { length: 50 }),
     currentMileage: integer('current_mileage').notNull().default(0),
+    ownerUserId: uuid('owner_user_id').references(() => users.id, { onDelete: 'set null' }),
     metadata: jsonb('metadata').default({}),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -31,6 +32,7 @@ export const vehicles = pgTable(
     uniqueIndex('vehicles_vin_uidx').on(table.vin),
     index('vehicles_plate_idx').on(table.plate),
     index('vehicles_make_model_idx').on(table.make, table.model),
+    index('vehicles_owner_user_idx').on(table.ownerUserId),
   ]
 );
 

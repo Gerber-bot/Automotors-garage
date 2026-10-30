@@ -27,6 +27,25 @@ import { CloseWorkOrderUseCase } from '../../modules/work-order/application/clos
 import { QuickServiceUseCase } from '../../modules/work-order/application/quick-service.usecase.ts';
 import { GetVehiclePassportUseCase } from '../../modules/maintenance-history/application/get-vehicle-passport.usecase.ts';
 import { CalculatePreventiveDueUseCase } from '../../modules/maintenance-intelligence/application/calculate-preventive-due.usecase.ts';
+import {
+  DeterministicMaintenanceEngine,
+  MaintenanceStatus,
+  type PreviousServiceEntry,
+} from '../../modules/maintenance-intelligence/domain/deterministic-engine.ts';
+import {
+  IntervalSource,
+  type ServiceIntervalRule,
+} from '../../modules/maintenance-intelligence/domain/intervals.ts';
+import {
+  VehicleKnowledgeBase,
+  OWNER_MAINTENANCE_CATEGORIES,
+  INSUFFICIENT_DATA_MESSAGE,
+} from '../../modules/maintenance-intelligence/domain/vehicle-knowledge-base.ts';
+import { Vehicle } from '../../modules/vehicle/domain/vehicle.ts';
+import { MaintenanceRecord } from '../../modules/maintenance-history/domain/maintenance-record.ts';
+import { VerificationLevel } from '../../modules/maintenance-history/domain/verification-level.ts';
+import { maintenanceIntervals } from '@automotors/database';
+import { ilike, and } from 'drizzle-orm';
 import { ProcessVoiceNoteUseCase } from '../../modules/maintenance-intelligence/application/process-voice-note.usecase.ts';
 import { InterpretObd2UseCase } from '../../modules/maintenance-intelligence/application/interpret-obd2.usecase.ts';
 import { MockAIProvider, MockTranscriptionProvider } from '../../modules/maintenance-intelligence/adapters/mock-ai.adapter.ts';
@@ -83,6 +102,7 @@ export class HttpApp {
     this.routeRegistry.registerPublicRoute('/health/live', 'GET');
     this.routeRegistry.registerPublicRoute('/health/ready', 'GET');
     this.routeRegistry.registerPublicRoute('/api/v1/auth/login', 'POST');
+    this.routeRegistry.registerPublicRoute('/api/v1/auth/register', 'POST');
     this.routeRegistry.registerPublicRoute('/api/v1/demo/seed', 'POST');
     this.routeRegistry.registerPublicRoute('/api/v1/vehicles/:id/passport', 'GET'); // Public view sanitized
 
@@ -267,8 +287,92 @@ export class HttpApp {
         query: Object.fromEntries(parsedUrl.searchParams),
       };
 
-      // 3. Authentication Guard
-      this.authGuard.canActivate(reqContext);
+      // 3. Authentication Guard (with persisted session hydration)
+      await this.authGuard.canActivateAsync(reqContext);
+
+      // 3b. AUTH: REGISTER VEHICLE OWNER (MI AUTOMOTORS)
+      if (pathname === '/api/v1/auth/register' && method === 'POST') {
+        const body = await this.parseBody(req);
+        const fullName = typeof body.fullName === 'string' ? body.fullName.trim() : '';
+        const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+        const password = typeof body.password === 'string' ? body.password : '';
+        const phone = typeof body.phone === 'string' ? body.phone.trim() : undefined;
+
+        if (!fullName || fullName.length < 2) {
+          return this.sendJson(res, 400, { error: 'El nombre completo es obligatorio (mínimo 2 caracteres).' }, requestId);
+        }
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!email || !emailRegex.test(email)) {
+          return this.sendJson(res, 400, { error: 'Ingresá un correo electrónico válido.' }, requestId);
+        }
+        if (!password || password.length < 8) {
+          return this.sendJson(res, 400, { error: 'La contraseña debe tener al menos 8 caracteres.' }, requestId);
+        }
+
+        const existingUser = await this.userRepo.findByEmail(email);
+        if (existingUser) {
+          return this.sendJson(
+            res,
+            409,
+            { error: 'Ya existe una cuenta registrada con este correo electrónico.' },
+            requestId
+          );
+        }
+
+        const passwordHash = await this.passwordService.hash(password);
+        const createdUser = await this.userRepo.createUser({
+          email,
+          passwordHash,
+          fullName,
+          phone,
+        });
+
+        const session = await this.sessionService.createSessionPersisted(
+          createdUser.id,
+          null,
+          60 * 24,
+          { ipAddress: req.socket.remoteAddress, userAgent: req.headers['user-agent'] }
+        );
+
+        const permissions = ['OWNER_PORTAL_ACCESS', 'READ', 'UPDATE', 'CREATE', 'CALCULATE_PREVENTIVE'];
+        const token = this.tokenService.generateAccessToken({
+          sub: createdUser.id,
+          email: createdUser.email,
+          tenantId: null,
+          role: 'VEHICLE_OWNER',
+          permissions,
+          sessionId: session.id,
+        });
+
+        this.log('INFO', 'Vehicle owner registered successfully in Mi Automotors', {
+          userId: createdUser.id,
+          requestId,
+        });
+
+        return this.sendJson(
+          res,
+          201,
+          {
+            token,
+            session: {
+              id: session.id,
+              expiresAt: session.expiresAt,
+              activeTenantId: null,
+            },
+            user: {
+              id: createdUser.id,
+              email: createdUser.email,
+              fullName: createdUser.fullName,
+              phone: createdUser.phone ?? null,
+              role: 'VEHICLE_OWNER',
+              accountType: 'VEHICLE_OWNER',
+              profiles: ['VEHICLE_OWNER'],
+              workshops: [],
+            },
+          },
+          requestId
+        );
+      }
 
       // 4. AUTH: LOGIN
       if (pathname === '/api/v1/auth/login' && method === 'POST') {
@@ -294,15 +398,20 @@ export class HttpApp {
 
         // Retrieve user's workshop memberships
         const memberships = await this.userRepo.getUserMemberships(user.id);
-        const targetWorkshop = workshopId
-          ? memberships.find((m) => m.workshopId === workshopId)
-          : memberships[0];
+        const hasWorkshops = memberships.length > 0;
+        const targetWorkshop = hasWorkshops
+          ? (workshopId ? memberships.find((m) => m.workshopId === workshopId) ?? memberships[0] : memberships[0])
+          : undefined;
 
-        const activeTenantId = targetWorkshop?.workshopId ?? 'a0000000-0000-4000-8000-000000000001';
-        const role = targetWorkshop?.role ?? 'MECHANIC';
-        const permissions = targetWorkshop?.permissions ?? ['READ', 'UPDATE', 'CREATE', 'CLOSE_ORDER'];
+        const activeTenantId = targetWorkshop ? targetWorkshop.workshopId : null;
+        const role = targetWorkshop ? targetWorkshop.role : 'VEHICLE_OWNER';
+        const permissions = targetWorkshop
+          ? targetWorkshop.permissions
+          : ['OWNER_PORTAL_ACCESS', 'READ', 'UPDATE', 'CREATE', 'CALCULATE_PREVENTIVE'];
+        const accountType = hasWorkshops ? 'WORKSHOP_USER' : 'VEHICLE_OWNER';
+        const profiles = hasWorkshops ? ['WORKSHOP_USER', 'VEHICLE_OWNER'] : ['VEHICLE_OWNER'];
 
-        const session = await this.sessionService.createSession(
+        const session = await this.sessionService.createSessionPersisted(
           user.id,
           activeTenantId,
           60 * 24,
@@ -318,7 +427,7 @@ export class HttpApp {
           sessionId: session.id,
         });
 
-        this.log('INFO', 'User authenticated successfully', { userId: user.id, activeTenantId, requestId });
+        this.log('INFO', 'User authenticated successfully', { userId: user.id, activeTenantId, accountType, requestId });
 
         return this.sendJson(
           res,
@@ -334,7 +443,10 @@ export class HttpApp {
               id: user.id,
               email: user.email,
               fullName: user.fullName,
+              phone: user.phone ?? null,
               role,
+              accountType,
+              profiles,
               workshops: memberships.map((m) => ({ id: m.workshopId, name: m.workshopName, role: m.role })),
             },
           },
@@ -345,12 +457,30 @@ export class HttpApp {
       // 5. AUTH: CURRENT USER & MEMBERSHIPS (ME)
       if (pathname === '/api/v1/auth/me' && method === 'GET') {
         const principal = reqContext.principal;
-        const memberships = await this.userRepo.getUserMemberships(principal.id);
+        const [userRecord, memberships] = await Promise.all([
+          this.userRepo.findById(principal.id),
+          this.userRepo.getUserMemberships(principal.id),
+        ]);
+        const hasWorkshops = memberships.length > 0;
+        const activeMembership = memberships.find((m) => m.workshopId === principal.activeTenantId) ?? memberships[0];
+        const role = hasWorkshops ? (activeMembership?.role ?? 'MECHANIC') : 'VEHICLE_OWNER';
+        const accountType = hasWorkshops ? 'WORKSHOP_USER' : 'VEHICLE_OWNER';
+        const profiles = hasWorkshops ? ['WORKSHOP_USER', 'VEHICLE_OWNER'] : ['VEHICLE_OWNER'];
+
         return this.sendJson(
           res,
           200,
           {
-            user: { id: principal.id, email: principal.email },
+            user: {
+              id: principal.id,
+              email: principal.email,
+              fullName: userRecord?.fullName ?? principal.email,
+              phone: userRecord?.phone ?? null,
+              role,
+              accountType,
+              profiles,
+            },
+            sessionId: principal.sessionId,
             activeTenantId: principal.activeTenantId,
             workshops: memberships,
           },
@@ -387,16 +517,39 @@ export class HttpApp {
 
       // 7. AUTH: REVOKE SESSION
       if (pathname.startsWith('/api/v1/auth/sessions/') && method === 'DELETE') {
-        const sessionId = pathname.split('/').pop()!;
-        await this.sessionService.revokeSession(sessionId);
-        this.log('INFO', 'Session revoked', { sessionId, requestId });
-        return this.sendJson(res, 200, { message: `Session '${sessionId}' revoked successfully.` }, requestId);
+        const rawSessionId = pathname.split('/').pop()!;
+        const principal = reqContext.principal;
+        const targetSessionId =
+          rawSessionId === 'current' && principal?.sessionId ? principal.sessionId : rawSessionId;
+
+        if (principal && targetSessionId !== principal.sessionId) {
+          const existingSession = this.sessionService.getSession(targetSessionId);
+          if (existingSession && existingSession.userId !== principal.id) {
+            return this.sendJson(res, 403, { error: 'Cannot revoke a session belonging to another user.' }, requestId);
+          }
+        }
+
+        await this.sessionService.revokeSession(targetSessionId);
+        this.log('INFO', 'Session revoked', { sessionId: targetSessionId, requestId });
+        return this.sendJson(res, 200, { message: `Session '${targetSessionId}' revoked successfully.` }, requestId);
       }
 
       // VEHICLES: PASSPORT (Public or Authenticated View)
       const passportMatch = pathname.match(/^\/api\/v1\/vehicles\/([^/]+)\/passport$/);
       if (passportMatch && method === 'GET') {
         const vehicleId = passportMatch[1]!;
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (uuidRegex.test(vehicleId)) {
+          const targetVehicle = await this.vehicleRepo.findById(vehicleId);
+          if (targetVehicle?.ownerId && reqContext.principal?.id !== targetVehicle.ownerId) {
+            return this.sendJson(
+              res,
+              403,
+              { error: 'Access forbidden: private owner vehicle passport is not shared publicly.' },
+              requestId
+            );
+          }
+        }
         const isPublic = parsedUrl.searchParams.get('public') === 'true';
         const result = await this.getPassportUseCase.execute({ vehicleId, isPublicView: isPublic });
         if (result.isFailure) {
@@ -405,9 +558,789 @@ export class HttpApp {
         return this.sendJson(res, 200, result.getValue(), requestId);
       }
 
-      // 8. Tenant Guard for tenant-scoped operations
+      // =======================================================================
+      // 7b. MI AUTOMOTORS — OWNER PORTAL ENDPOINTS (Resource-Scoped by principal.id)
+      // =======================================================================
+      if (pathname.startsWith('/api/v1/owner/')) {
+        const principal = reqContext.principal;
+        if (!principal) {
+          return this.sendJson(res, 401, { error: 'Authentication required.' }, requestId);
+        }
+
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+        // Helper to serialize an owner vehicle with its technical profile
+        const serializeOwnerVehicle = (v: Vehicle) => {
+          const specs = (v.technicalSpecs ?? {}) as Record<string, unknown>;
+          const kbProfile = VehicleKnowledgeBase.findProfile({
+            make: v.make,
+            model: v.model,
+            year: v.year,
+            engine: v.engine,
+            technicalSpecs: specs,
+          });
+          return {
+            id: v.id,
+            vin: v.vin ?? null,
+            plate: v.plate ?? null,
+            make: v.make,
+            model: v.model,
+            year: v.year,
+            engine: v.engine ?? null,
+            fuelType: v.fuelType ?? 'Nafta Super',
+            currentMileage: v.currentMileage,
+            ownerUserId: v.ownerId ?? principal.id,
+            transmission:
+              (specs.transmission as string) ??
+              kbProfile?.transmission ??
+              'No especificada',
+            distributionType:
+              (specs.distributionType as string) ??
+              kbProfile?.distributionType ??
+              'DESCONOCIDO',
+            exactEngineCode:
+              (specs.exactEngineCode as string) ??
+              kbProfile?.exactEngineCodeNote ??
+              'Pendiente de confirmación documental',
+            technicalProfile: kbProfile
+              ? {
+                  profileId: kbProfile.profileId,
+                  exactEngineCodeStatus: kbProfile.exactEngineCodeStatus,
+                  exactEngineCodeNote: kbProfile.exactEngineCodeNote,
+                  transmission: kbProfile.transmission,
+                  distributionType: kbProfile.distributionType,
+                  distributionNote: kbProfile.distributionNote,
+                  isProfileComplete: kbProfile.isProfileComplete,
+                }
+              : null,
+          };
+        };
+
+        // OWNER PROFILE: GET & PUT
+        if (pathname === '/api/v1/owner/profile' && method === 'GET') {
+          const [userRecord, memberships, ownedVehicles] = await Promise.all([
+            this.userRepo.findById(principal.id),
+            this.userRepo.getUserMemberships(principal.id),
+            this.vehicleRepo.findByOwnerUserId(principal.id),
+          ]);
+          if (!userRecord) {
+            return this.sendJson(res, 404, { error: 'User profile not found.' }, requestId);
+          }
+          const hasWorkshops = memberships.length > 0;
+          return this.sendJson(
+            res,
+            200,
+            {
+              id: userRecord.id,
+              email: userRecord.email,
+              fullName: userRecord.fullName,
+              phone: userRecord.phone ?? null,
+              createdAt: userRecord.createdAt?.toISOString() ?? null,
+              accountType: hasWorkshops ? 'WORKSHOP_USER' : 'VEHICLE_OWNER',
+              profiles: hasWorkshops ? ['WORKSHOP_USER', 'VEHICLE_OWNER'] : ['VEHICLE_OWNER'],
+              vehiclesCount: ownedVehicles.length,
+            },
+            requestId
+          );
+        }
+
+        if (pathname === '/api/v1/owner/profile' && method === 'PUT') {
+          const body = await this.parseBody(req);
+          if (body.fullName !== undefined && String(body.fullName).trim().length < 2) {
+            return this.sendJson(res, 400, { error: 'El nombre completo debe tener al menos 2 caracteres.' }, requestId);
+          }
+          const updated = await this.userRepo.updateProfile(principal.id, {
+            fullName: body.fullName,
+            phone: body.phone,
+          });
+          if (!updated) {
+            return this.sendJson(res, 404, { error: 'User profile not found.' }, requestId);
+          }
+          return this.sendJson(
+            res,
+            200,
+            {
+              id: updated.id,
+              email: updated.email,
+              fullName: updated.fullName,
+              phone: updated.phone ?? null,
+            },
+            requestId
+          );
+        }
+
+        // OWNER VEHICLES: LIST (MI GARAJE)
+        if (pathname === '/api/v1/owner/vehicles' && method === 'GET') {
+          const ownedVehicles = await this.vehicleRepo.findByOwnerUserId(principal.id);
+          return this.sendJson(
+            res,
+            200,
+            ownedVehicles.map(serializeOwnerVehicle),
+            requestId
+          );
+        }
+
+        // OWNER VEHICLES: REGISTER IN MI GARAJE
+        if (pathname === '/api/v1/owner/vehicles' && method === 'POST') {
+          const body = await this.parseBody(req);
+          const make = typeof body.make === 'string' ? body.make.trim() : '';
+          const model = typeof body.model === 'string' ? body.model.trim() : '';
+          const year = Number(body.year);
+          const currentMileage = Number(body.currentMileage ?? 0);
+          const rawPlate = typeof body.plate === 'string' ? body.plate.trim().toUpperCase().replace(/[^A-Z0-9]/g, '') : '';
+          const rawVin = typeof body.vin === 'string' && body.vin.trim().length > 0
+            ? body.vin.trim().toUpperCase()
+            : undefined;
+
+          if (!make || !model || Number.isNaN(year) || !rawPlate) {
+            return this.sendJson(
+              res,
+              400,
+              { error: 'Marca, modelo, año y patente son obligatorios para registrar un vehículo en Mi Garaje.' },
+              requestId
+            );
+          }
+          if (Number.isNaN(currentMileage) || currentMileage < 0) {
+            return this.sendJson(res, 400, { error: 'El kilometraje actual no puede ser negativo.' }, requestId);
+          }
+          if (rawVin && (rawVin.length < 8 || rawVin.length > 17)) {
+            return this.sendJson(res, 400, { error: 'El código VIN debe contener entre 8 y 17 caracteres alfanuméricos.' }, requestId);
+          }
+
+          // SECURITY INVARIANT: Knowing or registering an existing VIN or Plate must NEVER grant access
+          // to another person's or workshop's private vehicle or history.
+          if (rawVin) {
+            const existingByVin = await this.vehicleRepo.findByVin(rawVin);
+            if (existingByVin) {
+              return this.sendJson(
+                res,
+                409,
+                {
+                  error:
+                    'El VIN ingresado ya se encuentra registrado. Por seguridad y privacidad, conocer un VIN no otorga acceso automático al historial de otro titular.',
+                },
+                requestId
+              );
+            }
+          }
+
+          const existingByPlate = await this.vehicleRepo.findByPlate(rawPlate);
+          if (existingByPlate.length > 0) {
+            return this.sendJson(
+              res,
+              409,
+              {
+                error:
+                  'La patente ingresada ya se encuentra registrada. Por seguridad, conocer una patente no vincula ni expone historiales privados de terceros.',
+              },
+              requestId
+            );
+          }
+
+          const kbProfile = VehicleKnowledgeBase.findProfile({
+            make,
+            model,
+            year,
+            engine: body.engine,
+          });
+
+          const vResult = Vehicle.create({
+            vin: rawVin,
+            plate: rawPlate,
+            make,
+            model,
+            year,
+            engine: typeof body.engine === 'string' && body.engine.trim().length > 0 ? body.engine.trim() : undefined,
+            fuelType: body.fuelType || 'Nafta Super',
+            currentMileage,
+            ownerId: principal.id,
+            technicalSpecs: {
+              isOwnerPortalVehicle: true,
+              transmission: body.transmission || kbProfile?.transmission || 'Manual',
+              distributionType: body.distributionType || kbProfile?.distributionType || 'DESCONOCIDO',
+              exactEngineCode:
+                body.exactEngineCode ||
+                kbProfile?.exactEngineCodeNote ||
+                'Pendiente de confirmación documental',
+            },
+          });
+
+          if (vResult.isFailure) {
+            return this.sendJson(res, 400, { error: vResult.getError() }, requestId);
+          }
+
+          const vehicle = vResult.getValue();
+          await this.vehicleRepo.save(vehicle);
+
+          return this.sendJson(res, 201, serializeOwnerVehicle(vehicle), requestId);
+        }
+
+        // OWNER VEHICLE DETAIL & UPDATE (/api/v1/owner/vehicles/:id)
+        const ownerVehicleMatch = pathname.match(/^\/api\/v1\/owner\/vehicles\/([^/]+)$/);
+        if (ownerVehicleMatch) {
+          const vehicleId = ownerVehicleMatch[1]!;
+          if (!uuidRegex.test(vehicleId)) {
+            return this.sendJson(res, 404, { error: 'Vehículo no encontrado.' }, requestId);
+          }
+
+          const vehicle = await this.vehicleRepo.findById(vehicleId);
+          if (!vehicle) {
+            return this.sendJson(res, 404, { error: 'Vehículo no encontrado.' }, requestId);
+          }
+          if (vehicle.ownerId !== principal.id) {
+            return this.sendJson(
+              res,
+              403,
+              { error: 'Acceso denegado: no sos el propietario autorizado de este vehículo.' },
+              requestId
+            );
+          }
+
+          if (method === 'GET') {
+            return this.sendJson(res, 200, serializeOwnerVehicle(vehicle), requestId);
+          }
+
+          if (method === 'PUT') {
+            const body = await this.parseBody(req);
+            let targetMileage = vehicle.currentMileage;
+            if (body.currentMileage !== undefined) {
+              const parsedMileage = Number(body.currentMileage);
+              if (Number.isNaN(parsedMileage) || parsedMileage < 0) {
+                return this.sendJson(res, 400, { error: 'El kilometraje debe ser un número válido.' }, requestId);
+              }
+              const mileageRes = vehicle.updateMileage(parsedMileage);
+              if (mileageRes.isFailure) {
+                return this.sendJson(res, 400, { error: mileageRes.getError() }, requestId);
+              }
+              targetMileage = parsedMileage;
+            }
+
+            const currentSpecs = (vehicle.technicalSpecs ?? {}) as Record<string, unknown>;
+            const updatedVehicleRes = Vehicle.create(
+              {
+                vin: vehicle.vin,
+                plate: body.plate !== undefined ? String(body.plate).trim().toUpperCase() : vehicle.plate,
+                make: body.make !== undefined ? String(body.make).trim() : vehicle.make,
+                model: body.model !== undefined ? String(body.model).trim() : vehicle.model,
+                year: body.year !== undefined ? Number(body.year) : vehicle.year,
+                engine: body.engine !== undefined ? String(body.engine).trim() : vehicle.engine,
+                fuelType: (body.fuelType ?? vehicle.fuelType) as any,
+                currentMileage: targetMileage,
+                ownerId: principal.id,
+                technicalSpecs: {
+                  ...currentSpecs,
+                  ...(body.transmission !== undefined ? { transmission: body.transmission } : {}),
+                  ...(body.distributionType !== undefined ? { distributionType: body.distributionType } : {}),
+                },
+              },
+              vehicle.id
+            );
+
+            if (updatedVehicleRes.isFailure) {
+              return this.sendJson(res, 400, { error: updatedVehicleRes.getError() }, requestId);
+            }
+
+            const updatedVehicle = updatedVehicleRes.getValue();
+            await this.vehicleRepo.save(updatedVehicle);
+            return this.sendJson(res, 200, serializeOwnerVehicle(updatedVehicle), requestId);
+          }
+        }
+
+        // OWNER VEHICLE HISTORY (/api/v1/owner/vehicles/:id/history)
+        const ownerHistoryMatch = pathname.match(/^\/api\/v1\/owner\/vehicles\/([^/]+)\/history$/);
+        if (ownerHistoryMatch && method === 'GET') {
+          const vehicleId = ownerHistoryMatch[1]!;
+          if (!uuidRegex.test(vehicleId)) {
+            return this.sendJson(res, 404, { error: 'Vehículo no encontrado.' }, requestId);
+          }
+
+          const vehicle = await this.vehicleRepo.findById(vehicleId);
+          if (!vehicle) {
+            return this.sendJson(res, 404, { error: 'Vehículo no encontrado.' }, requestId);
+          }
+          if (vehicle.ownerId !== principal.id) {
+            return this.sendJson(
+              res,
+              403,
+              { error: 'Acceso denegado: no sos el propietario autorizado de este vehículo.' },
+              requestId
+            );
+          }
+
+          const records = await this.historyRepo.findByVehicleId(vehicle.id);
+          const correctionsMap = await this.historyRepo.findCorrectionsByRecordIds(records.map((r) => r.id));
+
+          const timeline = records.map((r) => {
+            const firstIntervention = r.interventions[0];
+            const totalCost =
+              (r.partsCost !== undefined ? r.partsCost : 0) +
+              (r.laborCost !== undefined ? r.laborCost : 0);
+
+            return {
+              id: r.id,
+              vehicleId: r.vehicleId,
+              serviceDate: r.serviceDate.toISOString(),
+              createdAt: r.createdAt.toISOString(),
+              recordedMileage: r.recordedMileage,
+              recordedByUserId: r.recordedByUserId ?? null,
+              category: firstIntervention?.category ?? 'GENERAL_INSPECTION',
+              title: firstIntervention?.title ?? 'Mantenimiento Registrado',
+              description:
+                firstIntervention?.description ??
+                r.interventions.map((i) => i.title).join(', '),
+              interventions: r.interventions,
+              workshopName: r.performingWorkshopName,
+              recordOrigin: r.recordOrigin,
+              verificationLevel: r.verificationLevel,
+              isCertified: r.isCertified,
+              observations: r.internalNotes ?? null,
+              cost: totalCost > 0 ? totalCost : null,
+              corrections: (correctionsMap[r.id] ?? []).map((c) => ({
+                id: c.id,
+                actorName: c.actorName,
+                reason: c.reason,
+                previousData: c.previousData,
+                correctedData: c.correctedData,
+                createdAt: c.createdAt.toISOString(),
+              })),
+            };
+          });
+
+          return this.sendJson(
+            res,
+            200,
+            {
+              vehicle: serializeOwnerVehicle(vehicle),
+              totalRecords: timeline.length,
+              certifiedCount: timeline.filter((t) => t.isCertified).length,
+              declaredCount: timeline.filter((t) => !t.isCertified).length,
+              timeline,
+            },
+            requestId
+          );
+        }
+
+        // OWNER MANUAL MAINTENANCE REGISTRATION (/api/v1/owner/vehicles/:id/maintenance)
+        const ownerMaintMatch = pathname.match(/^\/api\/v1\/owner\/vehicles\/([^/]+)\/maintenance$/);
+        if (ownerMaintMatch && method === 'POST') {
+          const vehicleId = ownerMaintMatch[1]!;
+          if (!uuidRegex.test(vehicleId)) {
+            return this.sendJson(res, 404, { error: 'Vehículo no encontrado.' }, requestId);
+          }
+
+          const vehicle = await this.vehicleRepo.findById(vehicleId);
+          if (!vehicle) {
+            return this.sendJson(res, 404, { error: 'Vehículo no encontrado.' }, requestId);
+          }
+          if (vehicle.ownerId !== principal.id) {
+            return this.sendJson(
+              res,
+              403,
+              { error: 'Acceso denegado: no sos el propietario autorizado de este vehículo.' },
+              requestId
+            );
+          }
+
+          const body = await this.parseBody(req);
+          const rawCategory = typeof body.category === 'string' ? body.category.trim() : '';
+          const description = typeof body.description === 'string' ? body.description.trim() : '';
+          const title = typeof body.title === 'string' && body.title.trim().length > 0
+            ? body.title.trim()
+            : description;
+          const recordedMileage = Number(body.recordedMileage);
+          const workshopNameInput = typeof body.workshopName === 'string' ? body.workshopName.trim() : '';
+          const observations = typeof body.observations === 'string' ? body.observations.trim() : undefined;
+          const cost = body.cost !== undefined && body.cost !== null && body.cost !== ''
+            ? Number(body.cost)
+            : undefined;
+
+          if (!rawCategory || !description || Number.isNaN(recordedMileage) || recordedMileage < 0) {
+            return this.sendJson(
+              res,
+              400,
+              { error: 'Categoría, descripción del trabajo y kilometraje válido son obligatorios.' },
+              requestId
+            );
+          }
+
+          const serviceDate = body.serviceDate ? new Date(body.serviceDate) : new Date();
+          if (Number.isNaN(serviceDate.getTime())) {
+            return this.sendJson(res, 400, { error: 'Fecha de mantenimiento inválida.' }, requestId);
+          }
+          if (serviceDate.getTime() > Date.now() + 24 * 60 * 60 * 1000) {
+            return this.sendJson(
+              res,
+              400,
+              { error: 'La fecha del mantenimiento realizado no puede estar en el futuro.' },
+              requestId
+            );
+          }
+
+          const normalizedCategory = VehicleKnowledgeBase.normalizeCategory(rawCategory);
+          const performingWorkshopName = workshopNameInput
+            ? `${workshopNameInput} (Declarado por Propietario)`
+            : 'Mantenimiento Personal Declarado por Propietario';
+
+          const recordRes = MaintenanceRecord.create({
+            vehicleId: vehicle.id,
+            performingTenantId: null,
+            performingWorkshopName,
+            recordedByUserId: principal.id,
+            recordOrigin: 'OWNER_DECLARED',
+            serviceDate,
+            recordedMileage,
+            verificationLevel: VerificationLevel.DECLARED,
+            isCertified: false,
+            criteriaMet: ['Self-declared by owner without external workshop verification'],
+            interventions: [
+              {
+                title,
+                category: normalizedCategory,
+                description,
+              },
+            ],
+            evidenceAssetIds: [],
+            internalNotes: observations,
+            partsCost: cost,
+            laborCost: 0,
+          });
+
+          if (recordRes.isFailure) {
+            return this.sendJson(res, 400, { error: recordRes.getError() }, requestId);
+          }
+
+          const record = recordRes.getValue();
+          await this.historyRepo.save(record);
+
+          // Advance vehicle currentMileage if the recorded service is higher than current odometer
+          if (recordedMileage > vehicle.currentMileage) {
+            vehicle.updateMileage(recordedMileage);
+            await this.vehicleRepo.save(vehicle);
+          }
+
+          return this.sendJson(
+            res,
+            201,
+            {
+              id: record.id,
+              vehicleId: record.vehicleId,
+              serviceDate: record.serviceDate.toISOString(),
+              createdAt: record.createdAt.toISOString(),
+              recordedMileage: record.recordedMileage,
+              recordedByUserId: record.recordedByUserId ?? principal.id,
+              category: normalizedCategory,
+              title,
+              description,
+              workshopName: record.performingWorkshopName,
+              recordOrigin: record.recordOrigin,
+              verificationLevel: record.verificationLevel,
+              isCertified: record.isCertified,
+              observations: record.internalNotes ?? null,
+              cost: record.partsCost ?? null,
+            },
+            requestId
+          );
+        }
+
+        // OWNER AUDITED CORRECTION ON MAINTENANCE RECORD (/api/v1/owner/maintenance/:recordId/corrections)
+        const ownerCorrectionMatch = pathname.match(/^\/api\/v1\/owner\/maintenance\/([^/]+)\/corrections$/);
+        if (ownerCorrectionMatch && method === 'POST') {
+          const recordId = ownerCorrectionMatch[1]!;
+          if (!uuidRegex.test(recordId)) {
+            return this.sendJson(res, 404, { error: 'Registro de mantenimiento no encontrado.' }, requestId);
+          }
+
+          const record = await this.historyRepo.findById(recordId);
+          if (!record) {
+            return this.sendJson(res, 404, { error: 'Registro de mantenimiento no encontrado.' }, requestId);
+          }
+
+          const vehicle = await this.vehicleRepo.findById(record.vehicleId);
+          if (!vehicle || vehicle.ownerId !== principal.id) {
+            return this.sendJson(
+              res,
+              403,
+              { error: 'Acceso denegado: no tenés permisos para corregir este registro.' },
+              requestId
+            );
+          }
+
+          const body = await this.parseBody(req);
+          const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+          const correctedData = (body.correctedData ?? {}) as Record<string, any>;
+
+          if (!reason || reason.length < 3) {
+            return this.sendJson(
+              res,
+              400,
+              { error: 'Debés indicar el motivo de la corrección auditada (mínimo 3 caracteres).' },
+              requestId
+            );
+          }
+
+          const userRecord = await this.userRepo.findById(principal.id);
+          const firstInt = record.interventions[0];
+          const previousData: Record<string, unknown> = {
+            recordedMileage: record.recordedMileage,
+            serviceDate: record.serviceDate.toISOString(),
+            category: firstInt?.category ?? 'GENERAL_INSPECTION',
+            description: firstInt?.description ?? firstInt?.title ?? '',
+            workshopName: record.performingWorkshopName,
+            observations: record.internalNotes ?? null,
+            cost: record.partsCost ?? null,
+          };
+
+          const correctionEntry = await this.historyRepo.addCorrection({
+            recordId: record.id,
+            actorId: principal.id,
+            actorName: userRecord?.fullName ?? principal.email,
+            reason,
+            previousData,
+            correctedData,
+          });
+
+          // If record was declared by the owner, update its current fields while preserving the immutable correction log
+          if (record.recordOrigin === 'OWNER_DECLARED') {
+            const newMileage =
+              correctedData.recordedMileage !== undefined
+                ? Number(correctedData.recordedMileage)
+                : record.recordedMileage;
+            const newDate =
+              correctedData.serviceDate !== undefined
+                ? new Date(correctedData.serviceDate)
+                : record.serviceDate;
+            const newCategory =
+              correctedData.category !== undefined
+                ? VehicleKnowledgeBase.normalizeCategory(String(correctedData.category))
+                : (firstInt?.category ?? 'GENERAL_INSPECTION');
+            const newDescription =
+              correctedData.description !== undefined
+                ? String(correctedData.description).trim()
+                : (firstInt?.description ?? firstInt?.title ?? '');
+            const newWorkshop =
+              correctedData.workshopName !== undefined
+                ? `${String(correctedData.workshopName).trim()} (Declarado por Propietario)`
+                : record.performingWorkshopName;
+            const newNotes =
+              correctedData.observations !== undefined
+                ? String(correctedData.observations).trim()
+                : record.internalNotes;
+            const newCost =
+              correctedData.cost !== undefined && correctedData.cost !== null && correctedData.cost !== ''
+                ? Number(correctedData.cost)
+                : record.partsCost;
+
+            const updatedRecord = MaintenanceRecord.restore(
+              {
+                vehicleId: record.vehicleId,
+                workOrderId: record.workOrderId,
+                performingTenantId: null,
+                performingWorkshopName: newWorkshop,
+                recordedByUserId: principal.id,
+                recordOrigin: 'OWNER_DECLARED',
+                serviceDate: newDate,
+                recordedMileage: newMileage,
+                verificationLevel: VerificationLevel.DECLARED,
+                isCertified: false,
+                criteriaMet: record.criteriaMet,
+                interventions: [
+                  {
+                    title: newDescription,
+                    category: newCategory,
+                    description: newDescription,
+                  },
+                ],
+                evidenceAssetIds: record.evidenceAssetIds,
+                internalNotes: newNotes,
+                partsCost: newCost,
+                laborCost: 0,
+              },
+              record.id
+            );
+
+            await this.historyRepo.save(updatedRecord);
+          }
+
+          return this.sendJson(
+            res,
+            201,
+            {
+              correction: {
+                id: correctionEntry.id,
+                recordId: correctionEntry.recordId,
+                actorName: correctionEntry.actorName,
+                reason: correctionEntry.reason,
+                previousData: correctionEntry.previousData,
+                correctedData: correctionEntry.correctedData,
+                createdAt: correctionEntry.createdAt.toISOString(),
+              },
+            },
+            requestId
+          );
+        }
+
+        // OWNER DETERMINISTIC MAINTENANCE PREDICTIONS (/api/v1/owner/vehicles/:id/predictions)
+        const ownerPredictMatch = pathname.match(/^\/api\/v1\/owner\/vehicles\/([^/]+)\/predictions$/);
+        if (ownerPredictMatch && method === 'GET') {
+          const vehicleId = ownerPredictMatch[1]!;
+          if (!uuidRegex.test(vehicleId)) {
+            return this.sendJson(res, 404, { error: 'Vehículo no encontrado.' }, requestId);
+          }
+
+          const vehicle = await this.vehicleRepo.findById(vehicleId);
+          if (!vehicle) {
+            return this.sendJson(res, 404, { error: 'Vehículo no encontrado.' }, requestId);
+          }
+          if (vehicle.ownerId !== principal.id) {
+            return this.sendJson(
+              res,
+              403,
+              { error: 'Acceso denegado: no sos el propietario autorizado de este vehículo.' },
+              requestId
+            );
+          }
+
+          const records = await this.historyRepo.findByVehicleId(vehicle.id);
+          const kbProfile = VehicleKnowledgeBase.findProfile({
+            make: vehicle.make,
+            model: vehicle.model,
+            year: vehicle.year,
+            engine: vehicle.engine,
+            technicalSpecs: vehicle.technicalSpecs,
+          });
+
+          // Also query documented rules from maintenance_intervals table for this make/model
+          const dbIntervalRows = await (this.db as any)
+            .select()
+            .from(maintenanceIntervals)
+            .where(
+              and(
+                ilike(maintenanceIntervals.make, `%${vehicle.make.trim()}%`),
+                ilike(maintenanceIntervals.model, `%${vehicle.model.split(' ')[0]!.trim()}%`)
+              )
+            );
+
+          const ruleMap = new Map<string, ServiceIntervalRule>();
+          if (kbProfile) {
+            for (const r of kbProfile.intervals) {
+              ruleMap.set(r.category, r);
+            }
+          }
+          for (const row of dbIntervalRows) {
+            const cat = VehicleKnowledgeBase.normalizeCategory(row.category);
+            if (!ruleMap.has(cat) && row.intervalKm && row.intervalMonths) {
+              ruleMap.set(cat, {
+                id: row.id,
+                category: cat,
+                title: `Mantenimiento Preventivo (${cat})`,
+                intervalKm: Number(row.intervalKm),
+                intervalMonths: Number(row.intervalMonths),
+                source: IntervalSource.OEM_MANUAL,
+                sourceCitation: row.sourceCitation,
+              });
+            }
+          }
+
+          // Extract previous services from vehicle maintenance records
+          const previousServices: PreviousServiceEntry[] = [];
+          for (const rec of records) {
+            for (const intv of rec.interventions) {
+              previousServices.push({
+                serviceDate: rec.serviceDate,
+                recordedMileage: rec.recordedMileage,
+                category: VehicleKnowledgeBase.normalizeCategory(intv.category || intv.title),
+              });
+            }
+          }
+
+          // Estimate average monthly usage when historical points are available
+          let estimatedMonthlyKm: number | undefined;
+          if (records.length >= 2) {
+            const sortedByDate = [...records].sort((a, b) => a.serviceDate.getTime() - b.serviceDate.getTime());
+            const oldest = sortedByDate[0]!;
+            const monthsElapsed = Math.max(
+              1,
+              (Date.now() - oldest.serviceDate.getTime()) / (1000 * 60 * 60 * 24 * 30.4375)
+            );
+            const kmDelta = vehicle.currentMileage - oldest.recordedMileage;
+            if (kmDelta > 0) {
+              estimatedMonthlyKm = Math.round(kmDelta / monthsElapsed);
+            }
+          }
+
+          const engine = new DeterministicMaintenanceEngine();
+          const predictions = OWNER_MAINTENANCE_CATEGORIES.map((meta) => {
+            const rule = ruleMap.get(meta.category) ?? null;
+            const calc = engine.calculate({
+              vehicle: {
+                id: vehicle.id,
+                make: vehicle.make,
+                model: vehicle.model,
+                year: vehicle.year,
+                currentMileage: vehicle.currentMileage,
+              },
+              rule,
+              previousServices,
+              usageConditions: estimatedMonthlyKm ? { averageMonthlyKm: estimatedMonthlyKm } : undefined,
+            });
+
+            const lastForCategory = previousServices
+              .filter((s) => s.category === meta.category)
+              .sort((a, b) => b.serviceDate.getTime() - a.serviceDate.getTime())[0];
+
+            const isInsufficient = calc.status === MaintenanceStatus.INSUFFICIENT_DATA;
+
+            let technicalNote: string | null = null;
+            if (meta.category === 'TIMING_BELT' && kbProfile?.distributionType === 'CADENA') {
+              technicalNote = kbProfile.distributionNote;
+            }
+
+            return {
+              category: meta.category,
+              label: meta.label,
+              shortDescription: meta.shortDescription,
+              status: calc.status,
+              nextDueMileage: calc.nextDueMileage,
+              remainingKm: calc.remainingKm,
+              nextDueDate: calc.nextDueDate ? calc.nextDueDate.toISOString() : null,
+              estimatedDaysRemaining: calc.estimatedDaysRemaining,
+              dueReason: calc.dueReason,
+              confidence: calc.confidence,
+              sourceCitation: calc.sourceCitation ?? null,
+              lastServiceDate: lastForCategory ? lastForCategory.serviceDate.toISOString() : null,
+              lastServiceMileage: lastForCategory ? lastForCategory.recordedMileage : null,
+              message: isInsufficient ? INSUFFICIENT_DATA_MESSAGE : null,
+              technicalNote,
+            };
+          });
+
+          return this.sendJson(
+            res,
+            200,
+            {
+              vehicle: serializeOwnerVehicle(vehicle),
+              estimatedMonthlyKm: estimatedMonthlyKm ?? 1250,
+              insufficientDataMessage: INSUFFICIENT_DATA_MESSAGE,
+              predictions,
+            },
+            requestId
+          );
+        }
+
+        return this.sendJson(res, 404, { error: `Owner route '${method} ${pathname}' not found.` }, requestId);
+      }
+
+      // 8. Tenant Guard for workshop tenant-scoped operations
       this.tenantGuard.canActivate(reqContext);
-      const tenantId = reqContext.principal?.activeTenantId ?? 'a0000000-0000-4000-8000-000000000001';
+      if (!reqContext.principal?.activeTenantId) {
+        return this.sendJson(
+          res,
+          403,
+          { error: 'Access forbidden: active workshop membership required for workshop operations.' },
+          requestId
+        );
+      }
+      const tenantId = reqContext.principal.activeTenantId;
 
       // WORKSHOPS: LIST USER AUTHORIZED WORKSHOPS
       if (pathname === '/api/v1/workshops' && method === 'GET') {
@@ -432,7 +1365,7 @@ export class HttpApp {
         const vin = parsedUrl.searchParams.get('vin') ?? undefined;
         const q = parsedUrl.searchParams.get('q') ?? undefined;
 
-        let vehicles = await this.vehicleRepo.search({ plate, vin });
+        let vehicles = (await this.vehicleRepo.search({ plate, vin })).filter((v) => !v.ownerId);
         if (q && q.trim().length > 0) {
           const term = q.trim().toLowerCase();
           vehicles = vehicles.filter(
@@ -469,6 +1402,14 @@ export class HttpApp {
         const vehicle = await this.vehicleRepo.findById(vehicleId);
         if (!vehicle) {
           return this.sendJson(res, 404, { error: `Vehicle '${vehicleId}' not found.` }, requestId);
+        }
+        if (vehicle.ownerId) {
+          return this.sendJson(
+            res,
+            403,
+            { error: 'Access forbidden: private owner vehicle has not shared access with this workshop.' },
+            requestId
+          );
         }
         return this.sendJson(
           res,
@@ -557,6 +1498,17 @@ export class HttpApp {
       // WORK ORDERS: CREATE
       if (pathname === '/api/v1/work-orders' && method === 'POST') {
         const body = await this.parseBody(req);
+        if (body.vehicleId) {
+          const targetVehicle = await this.vehicleRepo.findById(body.vehicleId);
+          if (targetVehicle?.ownerId) {
+            return this.sendJson(
+              res,
+              403,
+              { error: 'Access forbidden: private owner vehicle has not shared access with this workshop.' },
+              requestId
+            );
+          }
+        }
         const result = await this.createWorkOrderUseCase.execute({
           tenantId,
           workshopName: 'Alpha Motors Garage',
@@ -577,6 +1529,17 @@ export class HttpApp {
       // WORK ORDERS: QUICK SERVICE (STAR FEATURE)
       if (pathname === '/api/v1/work-orders/quick-service' && method === 'POST') {
         const body = await this.parseBody(req);
+        if (body.vehicleId) {
+          const targetVehicle = await this.vehicleRepo.findById(body.vehicleId);
+          if (targetVehicle?.ownerId) {
+            return this.sendJson(
+              res,
+              403,
+              { error: 'Access forbidden: private owner vehicle has not shared access with this workshop.' },
+              requestId
+            );
+          }
+        }
         const result = await this.quickServiceUseCase.execute({
           tenantId,
           workshopName: 'Alpha Motors Garage',
@@ -709,6 +1672,14 @@ export class HttpApp {
         if (!vehicle) {
           return this.sendJson(res, 404, { error: `Vehicle '${body.vehicleId}' not found.` }, requestId);
         }
+        if (vehicle.ownerId) {
+          return this.sendJson(
+            res,
+            403,
+            { error: 'Access forbidden: private owner vehicle has not shared access with this workshop.' },
+            requestId
+          );
+        }
 
         // Validate COM port safety if hardware transport is requested
         if (body.transportType === 'USB_SERIAL' || body.transportType === 'WINDOWS_USB_SERIAL') {
@@ -778,6 +1749,14 @@ export class HttpApp {
         const vehicle = await this.vehicleRepo.findById(body.vehicleId);
         if (!vehicle) {
           return this.sendJson(res, 404, { error: `Vehicle '${body.vehicleId}' not found.` }, requestId);
+        }
+        if (vehicle.ownerId) {
+          return this.sendJson(
+            res,
+            403,
+            { error: 'Access forbidden: private owner vehicle has not shared access with this workshop.' },
+            requestId
+          );
         }
 
         const record = this.obdService.createDiagnosticRecord(

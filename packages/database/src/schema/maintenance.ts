@@ -25,9 +25,12 @@ export const maintenanceRecords = pgTable(
       onDelete: 'set null',
     }),
     performingWorkshopId: uuid('performing_workshop_id')
-      .notNull()
       .references(() => workshops.id, { onDelete: 'cascade' }),
     performingWorkshopName: varchar('performing_workshop_name', { length: 255 }).notNull(),
+    recordedByUserId: uuid('recorded_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    recordOrigin: varchar('record_origin', { length: 50 }).notNull().default('WORKSHOP_CERTIFIED'),
     serviceDate: timestamp('service_date', { withTimezone: true }).notNull().defaultNow(),
     recordedMileage: integer('recorded_mileage').notNull(),
     verificationLevel: varchar('verification_level', { length: 50 }).notNull().default('DECLARED'), // DECLARED, WORKSHOP_VERIFIED, CERTIFIED_NETWORK
@@ -35,7 +38,7 @@ export const maintenanceRecords = pgTable(
     criteriaMet: jsonb('criteria_met').default([]),
     interventions: jsonb('interventions').default([]),
     evidenceAssetIds: jsonb('evidence_asset_ids').default([]),
-    internalNotes: text('internal_notes'), // Private to performing workshop
+    internalNotes: text('internal_notes'), // Private to performing workshop or owner notes
     partsCost: numeric('parts_cost', { precision: 12, scale: 2 }),
     laborCost: numeric('labor_cost', { precision: 12, scale: 2 }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -43,6 +46,7 @@ export const maintenanceRecords = pgTable(
   (table) => [
     index('maint_records_vehicle_idx').on(table.vehicleId),
     index('maint_records_workshop_idx').on(table.performingWorkshopId),
+    index('maint_records_recorded_by_idx').on(table.recordedByUserId),
     index('maint_records_service_date_idx').on(table.serviceDate),
     index('maint_records_mileage_idx').on(table.recordedMileage),
   ]

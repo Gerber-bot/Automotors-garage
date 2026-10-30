@@ -14,7 +14,10 @@ export interface AuthUser {
   id: string;
   email: string;
   fullName: string;
+  phone?: string | null;
   role: string;
+  accountType: 'WORKSHOP_USER' | 'VEHICLE_OWNER';
+  profiles: string[];
 }
 
 export interface AuthContextValue {
@@ -22,11 +25,14 @@ export interface AuthContextValue {
   activeTenantId: string | null;
   activeWorkshop: UserWorkshop | null;
   workshops: UserWorkshop[];
+  activePortal: 'WORKSHOP' | 'OWNER';
+  setActivePortal: (portal: 'WORKSHOP' | 'OWNER') => void;
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
   sessionId: string | null;
   login: (email: string, password: string, workshopId?: string) => Promise<boolean>;
+  registerOwner: (fullName: string, email: string, password: string, phone?: string) => Promise<boolean>;
   selectWorkshop: (workshopId: string) => Promise<boolean>;
   logout: () => Promise<void>;
   refreshSession: () => Promise<void>;
@@ -43,6 +49,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = React.useState<AuthUser | null>(null);
   const [activeTenantId, setActiveTenantId] = React.useState<string | null>(null);
   const [workshops, setWorkshops] = React.useState<UserWorkshop[]>([]);
+  const [activePortal, setActivePortal] = React.useState<'WORKSHOP' | 'OWNER'>('WORKSHOP');
   const [sessionId, setSessionId] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState<boolean>(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -88,23 +95,31 @@ export function AuthProvider({ children }: AuthProviderProps) {
         permissions: w.permissions || [],
       }));
 
-      const activeTenant = data.activeTenantId || mappedWorkshops[0]?.id || null;
-      const primaryRole = mappedWorkshops.find((w) => w.id === activeTenant)?.role || 'MECHANIC';
+      const hasWorkshops = mappedWorkshops.length > 0;
+      const activeTenant = hasWorkshops
+        ? (data.activeTenantId || mappedWorkshops[0]?.id || null)
+        : null;
+      const primaryRole = hasWorkshops
+        ? (mappedWorkshops.find((w) => w.id === activeTenant)?.role || data.user?.role || 'MECHANIC')
+        : 'VEHICLE_OWNER';
+      const accountType = hasWorkshops ? 'WORKSHOP_USER' : 'VEHICLE_OWNER';
+      const profiles = data.user?.profiles || (hasWorkshops ? ['WORKSHOP_USER', 'VEHICLE_OWNER'] : ['VEHICLE_OWNER']);
 
       setUser({
         id: data.user.id,
         email: data.user.email,
         fullName: data.user.fullName || data.user.email.split('@')[0],
+        phone: data.user.phone ?? null,
         role: primaryRole,
+        accountType,
+        profiles,
       });
       setActiveTenantId(activeTenant);
       setWorkshops(mappedWorkshops);
-
-      if (activeTenant) {
-        apiClient.setAuthSession(data.token || '', activeTenant);
-      }
+      setActivePortal(hasWorkshops ? 'WORKSHOP' : 'OWNER');
+      setSessionId(data.sessionId || null);
+      apiClient.setAuthSession(data.token || '', activeTenant);
     } catch {
-      // Offline or network error during session restore
       setUser(null);
       setActiveTenantId(null);
       setWorkshops([]);
@@ -115,7 +130,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, [apiClient]);
 
   React.useEffect(() => {
-    // Configure global unauthorized callback
     (apiClient as any).onUnauthorized = handleUnauthorized;
     void refreshSession();
   }, [apiClient, handleUnauthorized, refreshSession]);
@@ -145,26 +159,85 @@ export function AuthProvider({ children }: AuthProviderProps) {
         role: w.role || 'MECHANIC',
       }));
 
-      const activeTenant = data.session?.activeTenantId || mappedWorkshops[0]?.id || null;
-      const role = data.user?.role || mappedWorkshops.find((w) => w.id === activeTenant)?.role || 'MECHANIC';
+      const hasWorkshops = mappedWorkshops.length > 0;
+      const activeTenant = hasWorkshops
+        ? (data.session?.activeTenantId || mappedWorkshops[0]?.id || null)
+        : null;
+      const role = hasWorkshops
+        ? (data.user?.role || mappedWorkshops.find((w) => w.id === activeTenant)?.role || 'MECHANIC')
+        : 'VEHICLE_OWNER';
+      const accountType = hasWorkshops ? 'WORKSHOP_USER' : 'VEHICLE_OWNER';
+      const profiles = data.user?.profiles || (hasWorkshops ? ['WORKSHOP_USER', 'VEHICLE_OWNER'] : ['VEHICLE_OWNER']);
 
       setUser({
         id: data.user.id,
         email: data.user.email,
         fullName: data.user.fullName,
+        phone: data.user.phone ?? null,
         role,
+        accountType,
+        profiles,
       });
       setActiveTenantId(activeTenant);
       setWorkshops(mappedWorkshops);
+      setActivePortal(hasWorkshops ? 'WORKSHOP' : 'OWNER');
       setSessionId(data.session?.id || null);
 
-      if (activeTenant) {
-        apiClient.setAuthSession(data.token || '', activeTenant);
-      }
+      apiClient.setAuthSession(data.token || '', activeTenant);
 
       return true;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error inesperado durante el inicio de sesión.';
+      setError(msg);
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const registerOwner = async (
+    fullName: string,
+    email: string,
+    password: string,
+    phone?: string
+  ): Promise<boolean> => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({ fullName, email, password, phone }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'No se pudo completar el registro en Mi Automotors.');
+      }
+
+      setUser({
+        id: data.user.id,
+        email: data.user.email,
+        fullName: data.user.fullName,
+        phone: data.user.phone ?? null,
+        role: 'VEHICLE_OWNER',
+        accountType: 'VEHICLE_OWNER',
+        profiles: ['VEHICLE_OWNER'],
+      });
+      setActiveTenantId(null);
+      setWorkshops([]);
+      setActivePortal('OWNER');
+      setSessionId(data.session?.id || null);
+
+      apiClient.setAuthSession(data.token || '', null);
+
+      return true;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error inesperado durante el registro.';
       setError(msg);
       return false;
     } finally {
@@ -192,6 +265,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
 
       setActiveTenantId(targetWorkshopId);
+      setActivePortal('WORKSHOP');
 
       const updatedWorkshop = workshops.find((w) => w.id === targetWorkshopId);
       if (updatedWorkshop && user) {
@@ -231,6 +305,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setUser(null);
       setActiveTenantId(null);
       setWorkshops([]);
+      setActivePortal('WORKSHOP');
       setSessionId(null);
       setError(null);
       apiClient.clearAuthSession();
@@ -247,11 +322,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
     activeTenantId,
     activeWorkshop,
     workshops,
-    isAuthenticated: Boolean(user && activeTenantId),
+    activePortal,
+    setActivePortal,
+    isAuthenticated: Boolean(user),
     isLoading,
     error,
     sessionId,
     login,
+    registerOwner,
     selectWorkshop,
     logout,
     refreshSession,

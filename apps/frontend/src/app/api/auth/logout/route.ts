@@ -32,9 +32,13 @@ export async function POST(req: NextRequest) {
       // Empty body allowed
     }
 
-    if (body.sessionId && sessionToken) {
+    const targetSessionId = typeof body.sessionId === 'string' && body.sessionId.trim().length > 0
+      ? body.sessionId.trim()
+      : 'current';
+
+    if (sessionToken) {
       try {
-        await fetch(`${backendUrl}/api/v1/auth/sessions/${body.sessionId}`, {
+        await fetch(`${backendUrl}/api/v1/auth/sessions/${targetSessionId}`, {
           method: 'DELETE',
           headers: {
             Authorization: `Bearer ${sessionToken}`,

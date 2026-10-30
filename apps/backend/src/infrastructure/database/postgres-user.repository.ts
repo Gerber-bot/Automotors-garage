@@ -7,7 +7,9 @@ export interface AuthUserData {
   email: string;
   passwordHash: string;
   fullName: string;
+  phone?: string | null;
   isActive: boolean;
+  createdAt?: Date;
 }
 
 export interface UserWorkshopMembership {
@@ -32,7 +34,9 @@ export class PostgresUserRepository {
         email: users.email,
         passwordHash: users.passwordHash,
         fullName: users.fullName,
+        phone: users.phone,
         isActive: users.isActive,
+        createdAt: users.createdAt,
       })
       .from(users)
       .where(eq(users.email, normalized))
@@ -48,13 +52,75 @@ export class PostgresUserRepository {
         email: users.email,
         passwordHash: users.passwordHash,
         fullName: users.fullName,
+        phone: users.phone,
         isActive: users.isActive,
+        createdAt: users.createdAt,
       })
       .from(users)
       .where(eq(users.id, id))
       .limit(1);
 
     return rows[0] ?? null;
+  }
+
+  public async createUser(params: {
+    id?: string;
+    email: string;
+    passwordHash: string;
+    fullName: string;
+    phone?: string;
+  }): Promise<AuthUserData> {
+    const normalizedEmail = params.email.trim().toLowerCase();
+    const trimmedName = params.fullName.trim();
+    const trimmedPhone = params.phone?.trim() || null;
+
+    const inserted = await (this.db as any)
+      .insert(users)
+      .values({
+        ...(params.id ? { id: params.id } : {}),
+        email: normalizedEmail,
+        passwordHash: params.passwordHash,
+        fullName: trimmedName,
+        phone: trimmedPhone,
+        isActive: true,
+      })
+      .returning({
+        id: users.id,
+        email: users.email,
+        passwordHash: users.passwordHash,
+        fullName: users.fullName,
+        phone: users.phone,
+        isActive: users.isActive,
+        createdAt: users.createdAt,
+      });
+
+    return inserted[0];
+  }
+
+  public async updateProfile(
+    userId: string,
+    params: { fullName?: string; phone?: string }
+  ): Promise<AuthUserData | null> {
+    const existing = await this.findById(userId);
+    if (!existing) return null;
+
+    const updatedName =
+      params.fullName !== undefined && params.fullName.trim().length > 0
+        ? params.fullName.trim()
+        : existing.fullName;
+    const updatedPhone =
+      params.phone !== undefined ? params.phone.trim() || null : existing.phone ?? null;
+
+    await (this.db as any)
+      .update(users)
+      .set({
+        fullName: updatedName,
+        phone: updatedPhone,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId));
+
+    return this.findById(userId);
   }
 
   private getPermissionsForRole(role: string): string[] {
@@ -64,6 +130,8 @@ export class PostgresUserRepository {
         return ['READ', 'UPDATE', 'CREATE', 'CLOSE_ORDER', 'CALCULATE_PREVENTIVE', 'MANAGE_STAFF'];
       case 'MECHANIC':
         return ['READ', 'UPDATE', 'CREATE', 'CLOSE_ORDER', 'CALCULATE_PREVENTIVE'];
+      case 'VEHICLE_OWNER':
+        return ['OWNER_PORTAL_ACCESS', 'READ', 'UPDATE', 'CREATE', 'CALCULATE_PREVENTIVE'];
       default:
         return ['READ'];
     }

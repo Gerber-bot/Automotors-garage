@@ -72,6 +72,63 @@ export class AuthenticationGuard {
 
     return true;
   }
+
+  public async canActivateAsync(req: HttpRequestContext): Promise<boolean> {
+    const authHeader = req.headers['authorization'] ?? req.headers['Authorization'];
+
+    if (this.routeRegistry.isPublic(req.path, req.method)) {
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        try {
+          const token = authHeader.substring(7);
+          const payload = this.tokenService.verifyAccessToken(token);
+          await this.sessionService.assertActivePersisted(payload.sessionId);
+          req.principal = new AuthenticatedPrincipal({
+            id: payload.sub,
+            email: payload.email,
+            activeTenantId: payload.tenantId,
+            sessionId: payload.sessionId,
+            memberships: [
+              {
+                tenantId: payload.tenantId ?? '',
+                role: payload.role as Role,
+                status: 'active',
+                customPermissions: payload.permissions as readonly Permission[],
+              },
+            ],
+          });
+        } catch {
+          // Public route: ignore invalid/missing optional auth
+        }
+      }
+      return true;
+    }
+
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      throw new AuthenticationRequiredError('Missing or malformed Authorization header.');
+    }
+
+    const token = authHeader.substring(7);
+    const payload = this.tokenService.verifyAccessToken(token);
+
+    await this.sessionService.assertActivePersisted(payload.sessionId);
+
+    req.principal = new AuthenticatedPrincipal({
+      id: payload.sub,
+      email: payload.email,
+      activeTenantId: payload.tenantId,
+      sessionId: payload.sessionId,
+      memberships: [
+        {
+          tenantId: payload.tenantId ?? '',
+          role: payload.role as Role,
+          status: 'active',
+          customPermissions: payload.permissions as readonly Permission[],
+        },
+      ],
+    });
+
+    return true;
+  }
 }
 
 export class TenantGuard {
