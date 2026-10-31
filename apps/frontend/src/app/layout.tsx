@@ -3,8 +3,18 @@ import './globals.css';
 import { AuthProvider } from '../context/AuthContext.tsx';
 
 export const metadata: Metadata = {
-  title: 'Automotors Garage — Platform Dashboard',
-  description: 'Enterprise Workshop Management & Certified Vehicle Passport Platform',
+  title: 'Automotors Garage — El Historial de tu Vehículo y la Gestión de tu Taller',
+  description:
+    'Plataforma integral de gestión vehicular y de taller: Mi Automotors para propietarios particulares y Automotors Pro para administración operativa de talleres mecánicos.',
+  keywords: [
+    'gestión de taller mecánico',
+    'historial de mantenimiento vehicular',
+    'órdenes de trabajo',
+    'diagnóstico obd2',
+    'pasaporte de mantenimiento',
+    'quick service mecánico',
+  ],
+  authors: [{ name: 'Automotors Garage Engineering' }],
   icons: {
     icon: '/favicon.ico',
   },

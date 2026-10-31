@@ -16,7 +16,11 @@ import {
 import { Card, Button, Input, Badge } from '../ui/index.ts';
 import { useAuth } from '../../context/AuthContext.tsx';
 
-export function LoginView() {
+interface LoginViewProps {
+  onBack?: () => void;
+}
+
+export function LoginView({ onBack }: LoginViewProps = {}) {
   const { login, registerOwner, isLoading, error, clearError } = useAuth();
   const [authMode, setAuthMode] = React.useState<'LOGIN' | 'REGISTER_OWNER'>('LOGIN');
 
@@ -89,6 +93,17 @@ export function LoginView() {
       </div>
 
       <div className="w-full max-w-md space-y-5">
+        {onBack && (
+          <div className="flex items-center justify-start">
+            <button
+              type="button"
+              onClick={onBack}
+              className="text-xs text-slate-400 hover:text-emerald-400 transition-colors flex items-center gap-1.5 font-medium py-1 px-2 rounded-lg hover:bg-slate-900"
+            >
+              <span>← Volver al inicio</span>
+            </button>
+          </div>
+        )}
         {/* BRANDING HEADER */}
         <div className="text-center space-y-2">
           <div className="inline-flex items-center justify-center h-14 w-14 rounded-2xl bg-gradient-to-tr from-emerald-600 to-emerald-400 text-white shadow-xl shadow-emerald-950/60 ring-1 ring-emerald-400/30 mb-1">

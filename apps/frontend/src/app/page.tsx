@@ -8,6 +8,7 @@ import { ServiceQuickEntry } from '../components/domain/ServiceQuickEntry.tsx';
 import { DiagnosticsView } from '../components/domain/DiagnosticsView.tsx';
 import { MiAutomotorsView } from '../components/domain/MiAutomotorsView.tsx';
 import { LoginView } from '../components/domain/LoginView.tsx';
+import { LandingView } from '../components/domain/LandingView.tsx';
 import { EmptyState, Button, LoadingState } from '../components/ui/index.ts';
 import { useAuth } from '../context/AuthContext.tsx';
 import { Wrench, ArrowLeft, ShieldCheck, CarFront } from 'lucide-react';
@@ -26,6 +27,7 @@ export default function HomePage() {
   } = useAuth();
 
   const [currentScreen, setCurrentScreen] = React.useState<string>('dashboard');
+  const [showAuth, setShowAuth] = React.useState<boolean>(false);
 
   React.useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -33,6 +35,10 @@ export default function HomePage() {
       const screenParam = params.get('screen');
       if (screenParam) {
         setCurrentScreen(screenParam);
+      }
+      const authParam = params.get('auth');
+      if (authParam === 'true' || authParam === 'login') {
+        setShowAuth(true);
       }
       const portalParam = params.get('portal');
       if (portalParam === 'owner') {
@@ -55,9 +61,12 @@ export default function HomePage() {
     );
   }
 
-  // Unauthenticated State: Show Login / Owner Registration
+  // Unauthenticated State: Show Landing Page by default, or Login / Registration when requested
   if (!isAuthenticated || !user) {
-    return <LoginView />;
+    if (showAuth) {
+      return <LoginView onBack={() => setShowAuth(false)} />;
+    }
+    return <LandingView onGoToAuth={() => setShowAuth(true)} />;
   }
 
   // Mi Automotors Portal (Vehicle Owner Experience)
