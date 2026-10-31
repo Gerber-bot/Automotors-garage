@@ -15,6 +15,7 @@ import {
   ChevronRight,
   Check,
 } from 'lucide-react';
+import { formatMileage } from '../../lib/utils.ts';
 
 export type WorkOrderStatus =
   | 'DRAFT'
@@ -566,7 +567,7 @@ export function DemoWorkshopView() {
 
                       <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-400">
                         <span>Cliente: {o.customerName}</span>
-                        <span className="text-emerald-400">{o.reportedMileage.toLocaleString()} km</span>
+                        <span className="text-emerald-400">{formatMileage(o.reportedMileage)}</span>
                       </div>
                     </div>
                   );
@@ -660,7 +661,7 @@ export function DemoWorkshopView() {
                         <p className="text-xs text-slate-200 font-medium">{o.taskTitle}</p>
                         <p className="text-xs text-slate-400">{o.description}</p>
                         <p className="text-[11px] text-slate-500 font-mono">
-                          Titular: {o.customerName} · Odómetro: {o.reportedMileage.toLocaleString()} km · Creada: {o.createdAt}
+                          Titular: {o.customerName} · Odómetro: {formatMileage(o.reportedMileage)} · Creada: {o.createdAt}
                           {o.closedAt && ` · Cerrada: ${o.closedAt}`}
                         </p>
                       </div>
@@ -884,7 +885,7 @@ export function DemoWorkshopView() {
                     <div className="flex items-center justify-between">
                       <span className="text-slate-400">Odómetro verificado:</span>
                       <span className="font-mono font-bold text-emerald-400">
-                        {parseInt(qsMileage, 10) ? `${parseInt(qsMileage, 10).toLocaleString()} km` : '0 km'}
+                        {formatMileage(parseInt(qsMileage, 10) || 0)}
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
@@ -1082,7 +1083,7 @@ export function DemoWorkshopView() {
                 </div>
                 <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800">
                   <span className="text-[10px] text-slate-500 block">Odómetro Reportado</span>
-                  <span className="text-emerald-400">{selectedOrder.reportedMileage.toLocaleString()} km</span>
+                  <span className="text-emerald-400">{formatMileage(selectedOrder.reportedMileage)}</span>
                 </div>
               </div>
 

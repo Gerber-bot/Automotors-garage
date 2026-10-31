@@ -292,4 +292,60 @@ describe('Frontend Architecture & Components Test Suite', () => {
     assert.match(workshopContent, /no se conecta\s+f[ií]sicamente a una ECU vehicular/i);
     assert.match(workshopContent, /SAE J2012/i);
   });
+
+  // ============================================================================
+  // Test 9: Hotfix de Hidratación — Formateo Determinista es-AR
+  // ============================================================================
+  it('9. Formateador determinista de kilometraje previene desajustes de hidratación (Hydration Mismatch SSR vs Cliente)', async () => {
+    const { formatNumber, formatMileage } = await import('../src/lib/utils.ts');
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    const resolveAppPath = (rel: string) => path.resolve(__dirname, '..', rel);
+
+    // 1. Verificación determinista de la función formatMileage con es-AR
+    assert.equal(formatNumber(38500), '38.500');
+    assert.equal(formatMileage(38500), '38.500 km');
+    assert.equal(formatMileage(0), '0 km');
+    assert.equal(formatMileage(48500), '48.500 km');
+    assert.equal(formatMileage(60150), '60.150 km');
+    assert.equal(formatMileage('38500'), '38.500 km');
+
+    // 2. Simulación de riesgo de hidratación:
+    // Demostrar que toLocaleString() sin locale hereda la configuración del entorno
+    // mientras que formatMileage produce idéntica salida independientemente del host.
+    const rawLocaleResult = (38500).toLocaleString('es-AR');
+    assert.equal(rawLocaleResult, '38.500');
+    assert.equal(formatMileage(38500), `${rawLocaleResult} km`);
+
+    // 3. Verificación estricta en código de componentes demo:
+    // No deben existir llamadas a .toLocaleString() sin locale o que omitan es-AR
+    const ownerViewPath = resolveAppPath('src/components/demo/DemoOwnerView.tsx');
+    const ownerContent = fs.readFileSync(ownerViewPath, 'utf8');
+    assert.doesNotMatch(
+      ownerContent,
+      /\.toLocaleString\(\)/,
+      'DemoOwnerView no debe usar toLocaleString() sin especificar es-AR'
+    );
+    assert.match(ownerContent, /formatMileage/);
+
+    const workshopViewPath = resolveAppPath('src/components/demo/DemoWorkshopView.tsx');
+    const workshopContent = fs.readFileSync(workshopViewPath, 'utf8');
+    assert.doesNotMatch(
+      workshopContent,
+      /\.toLocaleString\(\)/,
+      'DemoWorkshopView no debe usar toLocaleString() sin especificar es-AR'
+    );
+    assert.match(workshopContent, /formatMileage/);
+
+    // 4. Verificación de layout.tsx: no debe silenciar errores con suppressHydrationWarning
+    const layoutPath = resolveAppPath('src/app/layout.tsx');
+    const layoutContent = fs.readFileSync(layoutPath, 'utf8');
+    assert.doesNotMatch(
+      layoutContent,
+      /suppressHydrationWarning/,
+      'layout.tsx no debe ocultar errores de hidratación mediante suppressHydrationWarning'
+    );
+  });
 });

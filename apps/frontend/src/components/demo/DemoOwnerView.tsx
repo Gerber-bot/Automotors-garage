@@ -17,6 +17,7 @@ import {
   Gauge,
   FileText,
 } from 'lucide-react';
+import { formatMileage } from '../../lib/utils.ts';
 
 export interface SyntheticOwnerVehicle {
   id: string;
@@ -284,7 +285,7 @@ export function DemoOwnerView() {
     const km = parseInt(serviceMileage, 10);
     if (isNaN(km) || km < currentVehicle.currentMileage) {
       setServiceFormError(
-        `El kilometraje ingresado (${km || 0} km) no puede ser inferior al odómetro actual (${currentVehicle.currentMileage.toLocaleString()} km).`
+        `El kilometraje ingresado (${formatMileage(km)}) no puede ser inferior al odómetro actual (${formatMileage(currentVehicle.currentMileage)}).`
       );
       return;
     }
@@ -535,7 +536,7 @@ export function DemoOwnerView() {
                       <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 pt-1 border-t border-slate-800/60">
                         <span className="flex items-center gap-1 text-slate-300">
                           <Gauge className="h-3 w-3 text-slate-500" />
-                          <span>{v.currentMileage.toLocaleString()} km</span>
+                          <span>{formatMileage(v.currentMileage)}</span>
                         </span>
                         <span className="text-[10px] text-slate-400">
                           {vEventsCount} {vEventsCount === 1 ? 'servicio' : 'servicios'}
@@ -605,7 +606,7 @@ export function DemoOwnerView() {
                   <div className="px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-right min-w-[120px]">
                     <span className="text-[10px] text-slate-400 uppercase font-semibold block">Odómetro</span>
                     <span className="text-base sm:text-lg font-mono font-bold text-emerald-400">
-                      {currentVehicle.currentMileage.toLocaleString()} km
+                      {formatMileage(currentVehicle.currentMileage)}
                     </span>
                   </div>
                   <div className="px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-right min-w-[120px]">
@@ -715,7 +716,7 @@ export function DemoOwnerView() {
                           <div className="flex items-center gap-3 text-xs font-mono text-slate-400">
                             <span className="font-bold text-emerald-400 flex items-center gap-1">
                               <Gauge className="h-3.5 w-3.5 text-slate-500" />
-                              <span>{evt.mileage.toLocaleString()} km</span>
+                              <span>{formatMileage(evt.mileage)}</span>
                             </span>
                             <span>·</span>
                             <span className="flex items-center gap-1 text-slate-300">
@@ -792,7 +793,7 @@ export function DemoOwnerView() {
                         <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs font-mono text-slate-300">
                           <div>
                             <span className="text-[10px] text-slate-500 block">Objetivo</span>
-                            <span className="font-bold text-emerald-400">{pred.targetMileage.toLocaleString()} km</span>
+                            <span className="font-bold text-emerald-400">{formatMileage(pred.targetMileage)}</span>
                           </div>
                           <div className="text-right">
                             <span className="text-[10px] text-slate-500 block">Fecha Estimada</span>
