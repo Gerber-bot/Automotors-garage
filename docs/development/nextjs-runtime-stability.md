@@ -11,7 +11,7 @@ El error `ENOENT: no such file or directory, open '.../apps/frontend/.next/serve
    - Como consecuencia, el servidor de desarrollo en memoria retuvo referencias a los chunks de desarrollo eliminados, provocando el fallo `ENOENT` en las siguientes peticiones HTTP.
 
 2. **Interferencia de OneDrive**:
-   - El repositorio se encuentra alojado bajo `C:\Users\feder\OneDrive\...`.
+   - El repositorio se encuentra alojado en un entorno de desarrollo sincronizado por OneDrive.
    - La sincronización en tiempo real de OneDrive compite por los bloqueos de archivos (*file handles*) de las carpetas de caché transitorias (`.next`), generando retardos de I/O y race conditions cuando miles de archivos se crean o purgan concurrentemente.
 
 3. **Borrado Destructivo en Scripts de Arranque**:
@@ -40,12 +40,12 @@ El error `ENOENT: no such file or directory, open '.../apps/frontend/.next/serve
 
 ## 3. Archivos Modificados
 
-- [`apps/frontend/next.config.mjs`](file:///c:/Users/feder/OneDrive/Escritorio/proyecto/AutomotorsGarage/apps/frontend/next.config.mjs): Configuración de `distDir` adaptativo (`.next-dev` vs `.next`).
-- [`apps/frontend/tsconfig.json`](file:///c:/Users/feder/OneDrive/Escritorio/proyecto/AutomotorsGarage/apps/frontend/tsconfig.json): Inclusión de tipos de desarrollo (`.next-dev/types/**/*.ts`).
-- [`.gitignore`](file:///c:/Users/feder/OneDrive/Escritorio/proyecto/AutomotorsGarage/.gitignore): Ignorado de `.next-dev/` y variantes `.next-*/`.
-- [`scripts/powershell/start-frontend.ps1`](file:///c:/Users/feder/OneDrive/Escritorio/proyecto/AutomotorsGarage/scripts/powershell/start-frontend.ps1): Parámetro `-Clean` opcional y comprobación de puerto en estado `Listen`.
-- [`scripts/powershell/start-dev.ps1`](file:///c:/Users/feder/OneDrive/Escritorio/proyecto/AutomotorsGarage/scripts/powershell/start-dev.ps1): Comprobación de puerto en estado `Listen`.
-- [`apps/frontend/src/components/domain/VehiclesView.tsx`](file:///c:/Users/feder/OneDrive/Escritorio/proyecto/AutomotorsGarage/apps/frontend/src/components/domain/VehiclesView.tsx): Memoización de `handleOpenDetail` con `useCallback` y limpieza de dependencias.
+- [`apps/frontend/next.config.mjs`](../../apps/frontend/next.config.mjs): Configuración de `distDir` adaptativo (`.next-dev` vs `.next`).
+- [`apps/frontend/tsconfig.json`](../../apps/frontend/tsconfig.json): Inclusión de tipos de desarrollo (`.next-dev/types/**/*.ts`).
+- [`.gitignore`](../../.gitignore): Ignorado de `.next-dev/` y variantes `.next-*/`.
+- [`scripts/powershell/start-frontend.ps1`](../../scripts/powershell/start-frontend.ps1): Parámetro `-Clean` opcional y comprobación de puerto en estado `Listen`.
+- [`scripts/powershell/start-dev.ps1`](../../scripts/powershell/start-dev.ps1): Comprobación de puerto en estado `Listen`.
+- [`apps/frontend/src/components/domain/VehiclesView.tsx`](../../apps/frontend/src/components/domain/VehiclesView.tsx): Memoización de `handleOpenDetail` con `useCallback` y limpieza de dependencias.
 
 ---
 

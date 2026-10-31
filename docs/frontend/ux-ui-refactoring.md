@@ -15,7 +15,7 @@ Milestone 10.3.1 delivers a comprehensive UX/UI refactoring and product cleanup 
 
 | Area | Diagnostic Finding | Impact |
 | :--- | :--- | :--- |
-| **Personal Branding** | Legacy demo seed and HTML views contained references to personal names (`Mauricio`, `DEMO — MAURICIO REVIEW`). | Unprofessional for generic SaaS product demos and potential customer audits. |
+| **Personal Branding** | Legacy demo seed and HTML views contained references to personal names (`[PERSONAL_NAME]`, `DEMO — [PERSONAL_NAME] REVIEW`). | Unprofessional for generic SaaS product demos and potential customer audits. |
 | **Desktop Layout** | Redundant duplication between the desktop sidebar and top operational area; no cohesive section header. | Wasted horizontal screen estate and navigation clutter. |
 | **Mobile Navigation** | The previous mobile bottom navigation lacked clear hierarchy and had a crowded 5-item menu that risked truncated text on 320px screens. | Difficult thumb navigation on compact smartphones (iPhone SE, Galaxy A series). |
 | **Operational Noise** | Dashboard displayed technical architecture banners (`Sincronizado con API REST en puerto 4000 & Motor Relacional PostgreSQL`). | Irrelevant and confusing to automotive mechanics and workshop owners. |
@@ -29,12 +29,12 @@ Milestone 10.3.1 delivers a comprehensive UX/UI refactoring and product cleanup 
 
 ### 3.1 Elimination of Personal References
 - **`apps/backend/src/infrastructure/database/demo-seed.ts`**:
-  - Replaced `CUSTOMER_MAURICIO` with `CUSTOMER_DEMO_VIP`.
-  - Replaced name `"Mauricio Fernández (Cliente VIP)"` with `"Carlos Méndez (Cliente VIP)"` and email `carlos.mendez@cliente.com`.
-  - Updated metadata `featuredFor: 'Mauricio'` to `featured: true`.
+  - Replaced legacy customer identifier with `CUSTOMER_DEMO_VIP`.
+  - Replaced personal name references with `"Carlos Méndez (Cliente VIP)"` and email `carlos.mendez@cliente.com`.
+  - Updated metadata `featuredFor` to `featured: true`.
 - **`apps/backend/src/infrastructure/http/demo-web-ui.ts`**:
-  - Replaced `DEMO — MAURICIO REVIEW` banner with `DEMO — AUTOMOTORS GARAGE`.
-  - Replaced `Vehículo Destacado para Mauricio` with `Vehículo Destacado (Demostración)`.
+  - Replaced legacy banner with `DEMO — AUTOMOTORS GARAGE`.
+  - Replaced specific dedication title with `Vehículo Destacado (Demostración)`.
 - **`scripts/database/seed-demo.ps1` & `scripts/database/seed-demo.ts`**:
   - Cleaned script documentation and console logs.
 - **`tests/integration/milestone-08-e2e.spec.ts`**:

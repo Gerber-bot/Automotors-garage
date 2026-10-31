@@ -77,7 +77,7 @@ powershell -ExecutionPolicy Bypass -File scripts/check-health.ps1 -Port 4000
 
 ## 3. Same-Origin Proxying & Networking Architecture
 
-To avoid Cross-Origin Resource Sharing (CORS) complications and maintain cookie/header security, Next.js implements internal rewrites in [`apps/frontend/next.config.mjs`](file:///c:/Users/feder/OneDrive/Escritorio/proyecto/AutomotorsGarage/apps/frontend/next.config.mjs):
+To avoid Cross-Origin Resource Sharing (CORS) complications and maintain cookie/header security, Next.js implements internal rewrites in [`apps/frontend/next.config.mjs`](../../apps/frontend/next.config.mjs):
 
 - Browser requests to `/api/v1/:path*` are rewritten on the server side to `http://127.0.0.1:4000/api/v1/:path*`.
 - Browser requests to `/health/:path*` are rewritten to `http://127.0.0.1:4000/health/:path*`.

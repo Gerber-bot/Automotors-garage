@@ -101,7 +101,7 @@ The user interface automatically adapts between desktop and mobile viewport cont
 ## 5. API Integration & Multi-Tenant Security
 
 * **Next.js Reverse Proxy**:
-  Configured in [`next.config.mjs`](file:///c:/Users/feder/OneDrive/Escritorio/proyecto/AutomotorsGarage/apps/frontend/next.config.mjs):
+  Configured in [`apps/frontend/next.config.mjs`](../../apps/frontend/next.config.mjs):
   ```javascript
   async rewrites() {
     return [
@@ -111,7 +111,7 @@ The user interface automatically adapts between desktop and mobile viewport cont
   }
   ```
 * **Authentication & Credentials**:
-  * Handled via [`ApiClient`](file:///c:/Users/feder/OneDrive/Escritorio/proyecto/AutomotorsGarage/apps/frontend/src/api/client.ts).
+  * Handled via [`apps/frontend/src/api/client.ts`](../../apps/frontend/src/api/client.ts).
   * Automatically injects `Authorization: Bearer <jwt>` and `x-tenant-id: <workshopId>` on every API request.
   * No secrets or credentials hardcoded into static bundles.
   * No silent mock fallback in production mode.

@@ -16,7 +16,7 @@ Automotors Garage delivers a high-trust, commercial-grade SaaS experience design
 
 ## 2. Design Tokens
 
-The central token repository is located at [`apps/frontend/src/design-system/tokens.ts`](file:///c:/Users/feder/OneDrive/Escritorio/proyecto/AutomotorsGarage/apps/frontend/src/design-system/tokens.ts) and synchronized with Tailwind CSS configuration.
+The central token repository is located at [`apps/frontend/src/design-system/tokens.ts`](../../apps/frontend/src/design-system/tokens.ts) and synchronized with Tailwind CSS configuration.
 
 ### 2.1 Color Palette
 

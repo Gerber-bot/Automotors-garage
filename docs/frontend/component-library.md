@@ -1,6 +1,6 @@
 # Automotors Garage — Component Library Reference
 
-All base components reside in [`apps/frontend/src/components/ui/`](file:///c:/Users/feder/OneDrive/Escritorio/proyecto/AutomotorsGarage/apps/frontend/src/components/ui/) and export through [`index.ts`](file:///c:/Users/feder/OneDrive/Escritorio/proyecto/AutomotorsGarage/apps/frontend/src/components/ui/index.ts).
+All base components reside in [`apps/frontend/src/components/ui/`](../../apps/frontend/src/components/ui/) and export through [`index.ts`](../../apps/frontend/src/components/ui/index.ts).
 
 ## 1. Components Catalog
 

@@ -35,7 +35,7 @@ All batch launchers adhere to strict engineering and security principles:
 
 ### First-Time Onboarding
 1. Open Windows Explorer and navigate to the project root folder:
-   `c:\Users\feder\OneDrive\Escritorio\proyecto\AutomotorsGarage`
+   `C:\path\to\AutomotorsGarage`
 2. Double-click **`CONFIGURAR_ENTORNO.bat`**. This creates `.data/`, `.run/`, `.logs/`, and copies `.env.example` to `.env` if not already present.
 3. Double-click **`DIAGNOSTICAR.bat`** to confirm your system meets all prerequisites.
 
