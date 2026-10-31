@@ -138,4 +138,102 @@ describe('Frontend Architecture & Components Test Suite', () => {
     });
     assert.equal(negativeMileage.success, false);
   });
+
+  // ============================================================================
+  // Test 6: Verificación de Contratos y Políticas de la Landing Page
+  // ============================================================================
+  it('6. Landing pública respeta las fuentes de verdad y políticas de contenido', async () => {
+    // Read LandingView source code to verify invariants
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    const resolveAppPath = (rel: string) => path.resolve(__dirname, '..', rel);
+
+    const landingPath = resolveAppPath('src/components/domain/LandingView.tsx');
+    assert.ok(fs.existsSync(landingPath), 'LandingView.tsx must exist');
+
+    const content = fs.readFileSync(landingPath, 'utf8');
+
+    // Invariant 1: Hero title and subtitle
+    assert.match(content, /El historial de tu vehículo/i);
+    assert.match(content, /La gestión de tu taller/i);
+    assert.match(content, /Una misma plataforma/i);
+
+    // Invariant 2: Active demo routes (connected without broken links)
+    assert.match(content, /demo interactiva disponible/i);
+    assert.match(content, /\/demo\/propietario/i);
+    assert.match(content, /\/demo\/taller/i);
+    assert.doesNotMatch(content, /Demo en preparación/i);
+
+    // Invariant 3: Mandatory technical disclaimer
+    assert.match(content, /Descargo.*obligatorio/i);
+    assert.match(content, /Orientaci[óo]n t[ée]cnica\s+preventiva/i);
+
+    // Invariant 4: No fake marketing claims or unproven time guarantees
+    assert.doesNotMatch(content, /100% garantizada/i);
+    assert.doesNotMatch(content, /invulnerable/i);
+    assert.doesNotMatch(content, /diagnóstico infalible/i);
+    assert.doesNotMatch(content, /nivel bancario/i);
+    assert.doesNotMatch(content, /<60s/i);
+    assert.doesNotMatch(content, /60 segundos/i);
+    assert.doesNotMatch(content, /inmutab/i);
+    assert.doesNotMatch(content, /credenciales de prueba/i);
+
+    // Invariant 5: Honest phrasing for services, history and illustrations
+    assert.match(content, /Registro [áa]gil de servicios/i);
+    assert.match(content, /trazabilidad.*correcciones auditables/i);
+    assert.match(content, /ilustrativ/i);
+  });
+
+  // ============================================================================
+  // Test 7: Demostraciones Públicas Interactivas y Aislamiento de Datos (Milestone 15.2.2)
+  // ============================================================================
+  it('7. Demos públicas de propietario y taller operan con datos sintéticos aislados sin credenciales ni backend real', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    const resolveAppPath = (rel: string) => path.resolve(__dirname, '..', rel);
+
+    // 1. Verificar existencia de rutas Next.js públicas
+    const ownerRoutePath = resolveAppPath('src/app/demo/propietario/page.tsx');
+    const workshopRoutePath = resolveAppPath('src/app/demo/taller/page.tsx');
+    assert.ok(fs.existsSync(ownerRoutePath), 'Ruta /demo/propietario debe existir');
+    assert.ok(fs.existsSync(workshopRoutePath), 'Ruta /demo/taller debe existir');
+
+    // 2. Verificar componente DemoOwnerView
+    const ownerViewPath = resolveAppPath('src/components/demo/DemoOwnerView.tsx');
+    assert.ok(fs.existsSync(ownerViewPath), 'DemoOwnerView.tsx debe existir');
+    const ownerContent = fs.readFileSync(ownerViewPath, 'utf8');
+
+    assert.match(ownerContent, /MODO DEMOSTRACIÓN/i);
+    assert.match(ownerContent, /href="\/"/i, 'Debe incluir enlace de retorno a la landing');
+    assert.match(ownerContent, /AF123CD/i, 'Debe incluir vehículo sintético Toyota');
+    assert.match(ownerContent, /AD456EF/i, 'Debe incluir vehículo sintético Ford');
+    assert.match(ownerContent, /WORKSHOP_CERTIFIED/i, 'Debe diferenciar registros certificados');
+    assert.match(ownerContent, /OWNER_DECLARED/i, 'Debe diferenciar registros declarados por dueño');
+    assert.match(ownerContent, /Descargo técnico obligatorio/i, 'Debe incluir descargo técnico');
+    // Aislamiento: sin JWT ni llamadas a backend privado
+    assert.doesNotMatch(ownerContent, /fetch\(/i, 'Demo no debe invocar fetch hacia backend persistente');
+    assert.doesNotMatch(ownerContent, /SUPER_ADMIN/i, 'Demo no debe contener privilegios SUPER_ADMIN');
+
+    // 3. Verificar componente DemoWorkshopView
+    const workshopViewPath = resolveAppPath('src/components/demo/DemoWorkshopView.tsx');
+    assert.ok(fs.existsSync(workshopViewPath), 'DemoWorkshopView.tsx debe existir');
+    const workshopContent = fs.readFileSync(workshopViewPath, 'utf8');
+
+    assert.match(workshopContent, /MODO DEMOSTRACIÓN/i);
+    assert.match(workshopContent, /href="\/"/i, 'Debe incluir enlace de retorno a la landing');
+    assert.match(workshopContent, /Garage Pro Centro/i, 'Debe identificar taller ficticio');
+    assert.match(workshopContent, /OT-2026/i, 'Debe incluir órdenes de trabajo sintéticas');
+    assert.match(workshopContent, /Quick Service/i, 'Debe permitir Quick Service ágil');
+    assert.match(workshopContent, /Confirmación Humana Técnica Obligatoria/i, 'Debe exigir confirmación en Quick Service');
+    assert.match(workshopContent, /P0300/i, 'Debe incluir caso de diagnóstico OBD-II simulado');
+    assert.match(workshopContent, /SAE J2012/i, 'Debe basarse en protocolo SAE J2012');
+    assert.match(workshopContent, /Diagnóstico técnico simulado/i, 'Debe declarar que el diagnóstico es simulado');
+    // Aislamiento: sin JWT ni llamadas a backend privado
+    assert.doesNotMatch(workshopContent, /fetch\(/i, 'Demo no debe invocar fetch hacia backend persistente');
+    assert.doesNotMatch(workshopContent, /SUPER_ADMIN/i, 'Demo no debe contener privilegios SUPER_ADMIN');
+  });
 });
