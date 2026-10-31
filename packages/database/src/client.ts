@@ -10,6 +10,7 @@ import * as schema from './schema/index.ts';
 const { Pool } = pg;
 
 export const DatabaseConfigSchema = z.object({
+  connectionString: z.string().optional(),
   host: z.string().default('localhost'),
   port: z.coerce.number().default(5432),
   user: z.string().default('postgres'),
@@ -28,6 +29,15 @@ export type DatabaseInstance = ReturnType<typeof drizzleNodePg<typeof schema>> |
 export class DatabaseFactory {
   public static createPool(rawConfig: Partial<DatabaseConfig> = {}): pg.Pool {
     const config = DatabaseConfigSchema.parse(rawConfig);
+    if (config.connectionString) {
+      return new Pool({
+        connectionString: config.connectionString,
+        ssl: config.ssl ? { rejectUnauthorized: false } : false,
+        max: config.maxConnections,
+        idleTimeoutMillis: config.idleTimeoutMillis,
+        connectionTimeoutMillis: config.connectionTimeoutMillis,
+      });
+    }
     return new Pool({
       host: config.host,
       port: config.port,

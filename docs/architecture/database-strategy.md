@@ -87,3 +87,25 @@ Running embedded SQLite or WASM PGlite engines directly inside cloud-synchronize
    AUTOMOTORS_DATA_DIR="%LOCALAPPDATA%\\AutomotorsGarage\\data"
    ```
 3. **Storage Relocation Script**: Automate migration via `scripts/database/relocate-data.ps1` to stop active database processes, copy existing `.data` payloads to the new location, update environment pointers, and verify database integrity.
+
+---
+
+## 4. Local Real PostgreSQL Foundation & Topology Transition (Milestone 14.2.1)
+
+### Dual Engine Persistence Architecture & Provider Control
+The system implements a structured persistence provider strategy (`DatabaseFactory` + `apps/backend/src/main.ts`):
+1. **`DB_PROVIDER=postgres`**: Targets native PostgreSQL 16+ on Windows (managed via `pg.Pool` with connection pool metrics). If the database connection fails, the process aborts immediately (`process.exit(1)`) with zero silent fallback to ensure absolute persistence integrity.
+2. **`DB_PROVIDER=pglite`**: Uses embedded PGlite WASM (PostgreSQL 16.4 engine running in-process), keeping the local workspace frictionless without requiring background Windows services.
+3. **Production Policy**: In `NODE_ENV === 'production'`, `postgres` is strictly enforced and PGlite fallback is blocked.
+
+### Relational Migrations Inventory (26 Tables)
+All migrations are written in strict ANSI/PostgreSQL SQL and are 100% compatible across both PGlite and real PostgreSQL instances:
+- `0001_initial_schema.sql` (18 tables): IAM, workshops, members, sessions, vehicles, customers, work orders, maintenance history, evidence, audit logs, outbox.
+- `0002_owner_portal.sql`: Multi-tenant extensions for Mi Automotors (optional VINs, owner vehicle binding, owner-declared maintenance records).
+- `0003_vehicle_knowledge_base.sql` (8 tables): OEM vehicle knowledge base, powertrains, generations, documentary sources, technical specs, and versioned maintenance rules.
+
+### Native Windows Service Deployment
+Rather than introducing container virtualization overhead (Docker/WSL) on the developer workstation:
+- **Service**: Native PostgreSQL 16 runs as a lightweight Windows Service (`postgresql-x64-16`) on `127.0.0.1:5432`.
+- **Isolation Verification**: `scripts/database/verify-postgresql-native.ps1` safely provisions an isolated integration database (`automotors_garage_integration`), applies all migrations via `DatabaseMigrator`, and verifies table integrity before routing application traffic.
+- **Data Protection**: Existing development and demo records in `.data/postgres_dev` remain intact until explicit migration in Milestone 14.2.2.

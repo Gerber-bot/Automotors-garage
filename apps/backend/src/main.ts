@@ -19,31 +19,50 @@ async function bootstrap() {
   let db;
   let dataDir: string | undefined;
   let pool: any;
-  try {
-    pool = DatabaseFactory.createPool({
-      host: process.env.POSTGRES_HOST || 'localhost',
-      port: Number(process.env.POSTGRES_PORT || 5432),
-      user: process.env.POSTGRES_USER || 'postgres',
-      password: process.env.POSTGRES_PASSWORD || 'postgres',
-      database: process.env.POSTGRES_DB || 'automotors_garage',
-    });
-    db = DatabaseFactory.create(pool);
-    await DatabaseMigrator.runMigrations(db);
-    console.log('✅ Connected to PostgreSQL and applied migrations successfully.');
-  } catch (err: unknown) {
-    if (pool && typeof pool.end === 'function') {
-      try {
-        await pool.end();
-      } catch {
-        // Ignore errors during pool shutdown before fallback
+
+  // DB_PROVIDER determines persistence strategy:
+  // - 'postgres': Connects to native PostgreSQL. If connection fails, execution HALTS immediately with fatal error (no silent fallback).
+  // - 'pglite': Uses embedded PGlite WASM engine (default in development/demo environments).
+  // - In production (NODE_ENV === 'production'): Always enforces 'postgres'.
+  const rawProvider = (process.env.DB_PROVIDER || (NODE_ENV === 'production' ? 'postgres' : 'pglite')).toLowerCase();
+  const dbProvider = rawProvider === 'postgres' || rawProvider === 'postgresql' ? 'postgres' : 'pglite';
+
+  if (dbProvider === 'postgres') {
+    const poolConfig = process.env.DATABASE_URL
+      ? { connectionString: process.env.DATABASE_URL }
+      : {
+          host: process.env.DATABASE_HOST || process.env.POSTGRES_HOST || 'localhost',
+          port: Number(process.env.DATABASE_PORT || process.env.POSTGRES_PORT || 5432),
+          user: process.env.DATABASE_USER || process.env.POSTGRES_USER || 'postgres',
+          password: process.env.DATABASE_PASSWORD || process.env.POSTGRES_PASSWORD || 'postgres',
+          database: process.env.DATABASE_NAME || process.env.POSTGRES_DB || 'automotors_garage',
+        };
+
+    try {
+      pool = DatabaseFactory.createPool(poolConfig);
+      db = DatabaseFactory.create(pool);
+      await DatabaseMigrator.runMigrations(db);
+      console.log('✅ Connected to native PostgreSQL and applied migrations successfully.');
+    } catch (err: unknown) {
+      if (pool && typeof pool.end === 'function') {
+        try {
+          await pool.end();
+        } catch {
+          // non-fatal
+        }
       }
+      console.error('❌ [FATAL] Database connection to PostgreSQL failed:', err instanceof Error ? err.message : String(err));
+      console.error('   DB_PROVIDER is set to postgres (or running in production mode).');
+      console.error('   Silent fallback to PGlite is prohibited to guarantee persistence integrity.');
+      process.exit(1);
     }
-    console.warn('⚠️  Could not connect to external PostgreSQL, falling back to embedded PGlite engine:', err instanceof Error ? err.message : String(err));
+  } else {
+    // PGlite embedded mode for frictionless local development
     const defaultDataDir = NODE_ENV === 'demo' ? './.data/postgres_demo' : './.data/postgres_dev';
     dataDir = process.env.PG_DATA_DIR || defaultDataDir;
     db = await DatabaseFactory.createInMemoryTestDb(dataDir);
     await DatabaseMigrator.runMigrations(db);
-    console.log(`✅ Initialized embedded PostgreSQL engine at '${dataDir}' and applied schema.`);
+    console.log(`✅ Initialized embedded PGlite engine at '${dataDir}' and applied schema.`);
   }
 
   const app = new HttpApp({ db });
