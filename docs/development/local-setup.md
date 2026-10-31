@@ -28,7 +28,7 @@ Automotors Garage provides two scripts to prepare your environment in seconds:
 Run the environment verification script to check Node.js, npm, PowerShell, port availability, and directory structures:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/check-env.ps1 -Port 4000
+powershell -ExecutionPolicy Bypass -File "Scripts de ejecucion automatica/utilities/check-env.ps1" -Port 4000
 ```
 
 Alternatively, use npm:
@@ -40,7 +40,7 @@ npm run dev:check
 Run the setup script to create local runtime folders (`.data/`, `.run/`, `.logs/`) and generate `.env` from `.env.example`:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/setup-dev.ps1 -Force
+powershell -ExecutionPolicy Bypass -File "Scripts de ejecucion automatica/utilities/setup-dev.ps1" -Force
 ```
 
 ---
@@ -53,40 +53,27 @@ Automotors Garage isolates data storage by environment:
 | :--- | :--- | :--- | :--- |
 | **Development** | `development` | `./.data/postgres_dev` | Day-to-day feature development with persistent schema |
 | **Demo** | `demo` | `./.data/postgres_demo` | Interactive showroom with idempotent multi-tenant seed data |
-| **Test** | `test` | In-memory / Isolated temp dirs | Automated test suites (`run-tests.ps1`) without cross-contamination |
+| **Test** | `test` | In-memory / Isolated temp dirs | Automated test suites (`npm test`) without cross-contamination |
 | **Production** | `production` | External PostgreSQL pool | Strict connection pool with production safeguards |
 
 ---
 
 ## 4. Starting the Application
 
-### Development Mode (Background Service)
-Starts the backend on port 4000, runs migrations, monitors health, and detaches:
+Automotors Garage boots **Full Stack** (Backend API on 4000 + Next.js SaaS on 3000):
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/start-dev.ps1 -Port 4000
-```
-Or via npm:
+### Option A: One-Click Windows Launchers
+Double-click inside `Scripts de ejecucion automatica/`:
+- `INICIAR_COMPLETO.bat`: Standard local development.
+- `INICIAR_COMPLETO_MODO_LAN.bat`: LAN development for testing on mobile devices.
+
+### Option B: npm CLI
 ```bash
+# Standard local start
 npm run dev
-```
 
-### Development Mode (Foreground Console)
-To keep the server output attached to your terminal (press `Ctrl+C` to terminate):
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/start-dev.ps1 -Port 4000 -Foreground
-```
-
-### Demo Mode
-Automatically seeds workshop and vehicle demo data, starts the server, and provides demo credentials:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/start-demo.ps1 -Port 4000
-```
-Or via npm:
-```bash
-npm run dev:demo
+# Local Area Network (LAN) start
+npm run dev:lan
 ```
 
 ---
@@ -95,8 +82,9 @@ npm run dev:demo
 
 To cleanly terminate active instances, release ports, and safely flush database write-ahead logs:
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/stop-dev.ps1 -Port 4000
+Double-click `Scripts de ejecucion automatica/DETENER_AUTOMOTORS.bat` or run:
+```bash
+npm run dev:stop
 ```
 Or via npm:
 ```bash

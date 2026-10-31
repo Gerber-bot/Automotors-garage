@@ -66,7 +66,8 @@ $env:PG_DATA_DIR = $DataDir
 Write-Host "  Entorno       : $Environment" -ForegroundColor DarkGray
 Write-Host "  Almacenamiento: $DataDir`n" -ForegroundColor DarkGray
 
-& node --experimental-strip-types scripts/database/seed-demo.ts
+$seedTs = Join-Path $scriptDir "seed-demo.ts"
+& node --experimental-strip-types "$seedTs"
 if ($LASTEXITCODE -ne 0) {
     Write-Error "El sembrado de datos demo finalizo con errores."
     exit 1

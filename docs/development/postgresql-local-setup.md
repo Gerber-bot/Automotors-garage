@@ -94,7 +94,7 @@ Se provee un script PowerShell seguro que valida el entorno sin afectar los dato
 
 ```powershell
 # Ejecutar verificación segura en base de integración
-powershell -File scripts/database/verify-postgresql-native.ps1 -DatabaseName "automotors_garage_integration"
+powershell -File "Scripts de ejecucion automatica/database/verify-postgresql-native.ps1" -DatabaseName "automotors_garage_integration"
 ```
 
 ### Funcionalidades de Seguridad del Script:

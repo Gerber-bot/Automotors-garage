@@ -22,11 +22,15 @@ An earlier instance of Node.js or another service is already listening on port 4
 ### Resolution
 1. Run the safe stopping script to release the port:
    ```powershell
-   powershell -ExecutionPolicy Bypass -File scripts/stop-dev.ps1 -Port 4000
+   powershell -ExecutionPolicy Bypass -File "Scripts de ejecucion automatica/automotors.ps1" -Action STOP
+   ```
+   Or via npm:
+   ```bash
+   npm run dev:stop
    ```
 2. If another application occupies port 4000, specify an alternative port:
    ```powershell
-   powershell -ExecutionPolicy Bypass -File scripts/start-dev.ps1 -Port 4001
+   powershell -ExecutionPolicy Bypass -File "Scripts de ejecucion automatica/automotors.ps1" -Action START -BackendPort 4001
    ```
 
 ---
@@ -50,7 +54,7 @@ The repository follows a strict **fail-safe data protection policy**:
 - Manual recovery steps (only after backing up existing data):
   ```powershell
   # 1. Ensure all node processes are stopped
-  powershell -ExecutionPolicy Bypass -File scripts/stop-dev.ps1 -Port 4000
+  npm run dev:stop
 
   # 2. Back up existing data
   Copy-Item -Recurse .data/postgres_dev .data/postgres_dev_backup
@@ -59,8 +63,7 @@ The repository follows a strict **fail-safe data protection policy**:
   Remove-Item -Recurse -Force .data/postgres_dev
 
   # 4. If re-seeding the demo environment:
-  powershell -ExecutionPolicy Bypass -File scripts/seed-demo.ps1 -Environment demo
-  ```
+  npm run seed:demo
   ```
 
 ---

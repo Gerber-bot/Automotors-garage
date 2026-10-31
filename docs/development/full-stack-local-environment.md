@@ -31,34 +31,28 @@ Automotors Garage provides an integrated local Full Stack development environmen
 
 ## 1. Quick Launchers & Commands
 
-### Windows One-Click Double-Click Launchers (Project Root)
+### Windows One-Click Double-Click Launchers (`Scripts de ejecucion automatica/`)
 
 | Batch File | Target Service | Script Executed | Description |
 | :--- | :--- | :--- | :--- |
-| `INICIAR_STACK_COMPLETO.bat` | Full Stack | `scripts/start-stack.ps1` | Validates environment, launches backend (4000), checks `/health/ready`, launches Next.js (3000), and opens browser. |
-| `DETENER_STACK_COMPLETO.bat` | Full Stack | `scripts/stop-stack.ps1` | Stops both frontend and backend processes cleanly and releases ports 3000 and 4000. |
-| `INICIAR_FRONTEND.bat` | Frontend Only | `scripts/start-frontend.ps1` | Starts Next.js 15 on port 3000 in background, writes PID, opens browser. |
-| `DETENER_FRONTEND.bat` | Frontend Only | `scripts/stop-frontend.ps1` | Stops only the Next.js process associated with port 3000. |
-| `INICIAR_AUTOMOTORS.bat` | Backend Only | `scripts/start-dev.ps1` | Starts backend on port 4000 in background with PGlite dev persistence. |
-| `DETENER_AUTOMOTORS.bat` | Backend Only | `scripts/stop-dev.ps1` | Stops only the backend process on port 4000. |
+| `INICIAR_COMPLETO.bat` | Full Stack | `automotors.ps1 -Action START` | Validates environment, launches backend (4000), checks `/health/ready`, launches Next.js (3000), and opens browser. |
+| `INICIAR_COMPLETO_MODO_LAN.bat` | Full Stack (LAN) | `automotors.ps1 -Action START-LAN` | Launches full stack bound to local Wi-Fi IP for testing on phones/tablets via same-origin Next.js proxy. |
+| `DETENER_AUTOMOTORS.bat` | Full Stack Stop | `automotors.ps1 -Action STOP` | Stops both frontend and backend processes cleanly and releases ports 3000 and 4000. |
 
 ### PowerShell CLI Commands
 
 ```powershell
 # Launch Full Stack (Default: Backend 4000 + Frontend 3000)
-powershell -ExecutionPolicy Bypass -File scripts/start-stack.ps1
-
-# Launch Full Stack with Demo Seeds
-powershell -ExecutionPolicy Bypass -File scripts/start-stack.ps1 -Demo
+powershell -ExecutionPolicy Bypass -File "Scripts de ejecucion automatica/automotors.ps1" -Action START
 
 # Launch Full Stack in LAN Mode (for mobile / tablet testing over Wi-Fi)
-powershell -ExecutionPolicy Bypass -File scripts/start-stack.ps1 -LAN
+powershell -ExecutionPolicy Bypass -File "Scripts de ejecucion automatica/automotors.ps1" -Action START-LAN
 
 # Stop Full Stack
-powershell -ExecutionPolicy Bypass -File scripts/stop-stack.ps1
+powershell -ExecutionPolicy Bypass -File "Scripts de ejecucion automatica/automotors.ps1" -Action STOP
 
 # Check Health & Readiness
-powershell -ExecutionPolicy Bypass -File scripts/check-health.ps1 -Port 4000
+powershell -ExecutionPolicy Bypass -File "Scripts de ejecucion automatica/utilities/check-health.ps1" -Port 4000
 ```
 
 ---

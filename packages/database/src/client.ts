@@ -165,7 +165,7 @@ export class DatabaseFactory {
       console.error(`   2. Backup the directory '${dataDir}' before attempting recovery.`);
       console.error(`   3. If persistent storage was corrupted by an external system crash:`);
       console.error(`      - For development: Remove-Item -Recurse -Force '${dataDir}' to start clean.`);
-      console.error(`      - For demo: Run 'powershell -File scripts/seed-demo.ps1 -Environment demo'.\n`);
+      console.error(`      - For demo: Run 'npm run seed:demo'.\n`);
       throw new Error(`Database initialization failed for '${dataDir || 'in-memory'}': ${errorMsg}`);
     }
 

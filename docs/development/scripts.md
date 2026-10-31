@@ -1,75 +1,77 @@
 # Development Automation Scripts Reference
 
-Automotors Garage provides a suite of PowerShell automation scripts located in `scripts/`. These scripts handle the local development lifecycle, environment diagnostics, testing, and demo seeding without external dependencies.
+Automotors Garage consolidates its automation scripts into the folder `Scripts de ejecucion automatica/`. This architecture provides unified full-stack startup, LAN/mobile access, safe shutdown, and database utilities without external dependencies or Docker.
 
 ---
 
-## 1. Scripts Catalog
+## 1. Unified Architecture Overview
 
-| Script | Purpose | Key Parameters | Example Usage |
-| :--- | :--- | :--- | :--- |
-| `check-env.ps1` | Diagnoses runtime prerequisites and reports environment readiness. | `-Port <int>`, `-Silent` | `.\scripts\check-env.ps1 -Port 4000` |
-| `setup-dev.ps1` | Creates `.data/`, `.run/`, `.logs/` and generates `.env` from template. | `-Force` | `.\scripts\setup-dev.ps1 -Force` |
-| `start-dev.ps1` | Launches backend server in background (or foreground) with health verification. | `-Port <int>`, `-Foreground`, `-TimeoutSec <int>` | `.\scripts\start-dev.ps1 -Port 4000` |
-| `stop-dev.ps1` | Safely terminates running server via PID file or listening port. | `-Port <int>`, `-Force` | `.\scripts\stop-dev.ps1 -Port 4000` |
-| `restart-dev.ps1` | Stops running server, releases resources, and starts a fresh instance. | `-Port <int>`, `-Foreground` | `.\scripts\restart-dev.ps1 -Port 4000` |
-| `check-health.ps1` | Probes `/health/live` and `/health/ready`, checking status codes and DB latency. | `-Port <int>`, `-Silent` | `.\scripts\check-health.ps1 -Port 4000` |
-| `seed-demo.ps1` | Seeds realistic multi-tenant data into the specified database. | `-DataDir <path>`, `-Environment <string>` | `.\scripts\seed-demo.ps1 -DataDir ./.data/postgres_demo` |
-| `start-demo.ps1` | Prepares demo database, runs seed, starts server, and shows demo guide. | `-Port <int>`, `-NoBrowser`, `-Foreground` | `.\scripts\start-demo.ps1 -Port 4000 -NoBrowser` |
-| `run-tests.ps1` | Executes unit, integration, persistence, and E2E test suites sequentially. | `-Suite <all\|unit\|persistence\|e2e>` | `.\scripts\run-tests.ps1 -Suite all` |
+```text
+Scripts de ejecucion automatica/
+├── INICIAR_COMPLETO.bat           # One-click full-stack launcher (Backend + Frontend Next.js)
+├── INICIAR_COMPLETO_MODO_LAN.bat  # Full-stack launcher bound to private LAN IPv4 for mobile testing
+├── DETENER_AUTOMOTORS.bat         # Clean shutdown of both Next.js (3000) and API Backend (4000)
+├── automotors.ps1                 # Central PowerShell controller (Actions: START, START-LAN, STOP)
+├── database/
+│   ├── seed-demo.ps1              # PowerShell wrapper for seed generation
+│   ├── seed-demo.ts               # Demo data seeder for local development
+│   └── verify-postgresql-native.ps1 # Verification script for native Windows PostgreSQL 16
+└── utilities/
+    ├── check-env.ps1              # Pre-flight environment check (Node, npm, PowerShell, ports)
+    ├── check-health.ps1           # Readiness probe for backend (/health/ready) and persistence
+    ├── process-utils.ps1          # Centralized process verification, LAN IP detection & safe PID cleanup
+    ├── run-tests.ps1              # Sequential test runner with per-suite process isolation
+    └── setup-dev.ps1              # Workspace initialization (.env, .data, .run, .logs)
+```
 
 ---
 
-## 2. npm Lifecycle Shortcuts
+## 2. Windows Batch Launchers
 
-For convenience, the root `package.json` maps standard npm commands to the PowerShell scripts:
+Located inside `Scripts de ejecucion automatica/`:
+
+| Launcher | Mode | Function |
+| :--- | :--- | :--- |
+| `INICIAR_COMPLETO.bat` | Standard Local | Validates Node.js & dependencies, checks environment, boots Backend (4000) with PGlite, waits for `/health/ready`, boots Next.js (3000) on `127.0.0.1`, and opens browser to `http://localhost:3000/`. |
+| `INICIAR_COMPLETO_MODO_LAN.bat` | LAN / Mobile | Identifies the physical active Wi-Fi/LAN IPv4, binds Next.js to `0.0.0.0`, forwards API calls via Next.js BFF proxy to `127.0.0.1:4000`, and displays mobile URLs (`http://<LAN_IP>:3000/demo/propietario`). |
+| `DETENER_AUTOMOTORS.bat` | Service Shutdown | Identifies running Frontend (3000) and Backend (4000) processes using PID files and TCP verification, safely terminates processes, removes stale PID files, and preserves `.data/` and `.logs/`. |
+
+---
+
+## 3. npm Lifecycle Commands
+
+The root `package.json` maps developer commands to `Scripts de ejecucion automatica/`:
 
 ```json
 {
   "scripts": {
-    "dev": "powershell -ExecutionPolicy Bypass -File scripts/start-dev.ps1",
-    "dev:demo": "powershell -ExecutionPolicy Bypass -File scripts/start-demo.ps1",
-    "dev:stop": "powershell -ExecutionPolicy Bypass -File scripts/stop-dev.ps1",
-    "dev:check": "powershell -ExecutionPolicy Bypass -File scripts/check-env.ps1",
-    "test": "powershell -ExecutionPolicy Bypass -File scripts/run-tests.ps1",
-    "typecheck": "tsc --noEmit"
+    "dev": "powershell -ExecutionPolicy Bypass -File \"Scripts de ejecucion automatica/automotors.ps1\" -Action START",
+    "dev:lan": "powershell -ExecutionPolicy Bypass -File \"Scripts de ejecucion automatica/automotors.ps1\" -Action START-LAN",
+    "dev:stop": "powershell -ExecutionPolicy Bypass -File \"Scripts de ejecucion automatica/automotors.ps1\" -Action STOP",
+    "dev:check": "powershell -ExecutionPolicy Bypass -File \"Scripts de ejecucion automatica/utilities/check-env.ps1\"",
+    "dev:health": "powershell -ExecutionPolicy Bypass -File \"Scripts de ejecucion automatica/utilities/check-health.ps1\"",
+    "seed:demo": "node --experimental-strip-types \"Scripts de ejecucion automatica/database/seed-demo.ts\"",
+    "test": "node --experimental-strip-types --test ...",
+    "lint": "eslint . --ext .ts,.tsx",
+    "typecheck": "tsc --project ... --noEmit"
   }
 }
 ```
 
 ---
 
-## 3. Detailed Script Descriptions
+## 4. Key Subroutines & Utilities
 
-### `scripts/check-env.ps1`
-- Validates that Node.js version is `>= 20.18.0`.
-- Validates npm version.
-- Validates PowerShell version (`5.1` or `7+`).
-- Inspects monorepo workspaces (`apps/backend`, `apps/frontend`, `packages/database`, etc.).
-- Verifies that TCP port (default: 4000) is unoccupied.
-- Emits structured console output with color-coded tags (`[OK]`, `[WARN]`, `[FAIL]`).
+### `automotors.ps1`
+- **Action `START`**: Boots backend on port 4000, awaits readiness, boots Next.js 15 on port 3000, and opens browser.
+- **Action `START-LAN`**: Detects private network IP (`192.168.x.x`), boots services with `HOST=0.0.0.0`, and outputs LAN URLs for smartphones/tablets.
+- **Action `STOP`**: Gracefully stops both Node processes without data loss.
 
-### `scripts/start-dev.ps1`
-- Checks for an already active server via `.run/server.pid` or port usage to prevent duplicate instances.
-- Sets `NODE_ENV=development` and configures default storage to `./.data/postgres_dev`.
-- Spawns background process using `Start-Process node` with separated stdout (`.logs/server_dev.log`) and stderr (`.logs/server_dev.err.log`).
-- Actively polls `/health/live` up to `TimeoutSec` (default: 15s) before returning control.
-- If server fails to boot, displays recent error logs immediately.
+### `utilities/check-env.ps1`
+- Validates Node.js (`>= 20.18.0`), npm (`>= 10.0.0`), PowerShell version, required workspace paths, and available TCP ports.
 
-### `scripts/stop-dev.ps1`
-- Reads `.run/server.pid` and confirms target process is indeed a `node` instance.
-- Falls back to `Get-NetTCPConnection` if PID file is missing.
-- Attempts graceful shutdown (`$process.CloseMainWindow()`), waits up to 4 seconds, and escalates to `Stop-Process -Force` if unresponsive.
-- Removes `.run/server.pid` upon completion.
+### `utilities/check-health.ps1`
+- Probes `/health/ready`, checking status codes, database response, and latencies.
 
-### `scripts/start-demo.ps1`
-- Checks environment requirements via `check-env.ps1`.
-- Populates `./.data/postgres_demo` with realistic sample workshops, mechanics, customers, vehicles, and certified work orders.
-- Starts backend server with `NODE_ENV=demo`.
-- Prints preconfigured workshop credentials (e.g., `mario@alphamotors.com / Password123!`) and guided demonstration steps.
-- Optionally opens default web browser to `http://localhost:4000/demo`.
-
-### `scripts/run-tests.ps1`
-- Executes all 7 test suites sequentially with individual process isolation.
-- Prevents resource starvation or lock collisions in PGlite.
-- Measures individual suite runtimes and displays a consolidated summary table.
+### `database/seed-demo.ts`
+- Seeds realistic workshops, technicians, vehicle knowledge base items, and certified service history into local PGlite or native PostgreSQL.

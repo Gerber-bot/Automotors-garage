@@ -87,8 +87,8 @@ if (-not $SkipTypecheck) {
 Write-Host "`n=======================================================" -ForegroundColor Cyan
 Write-Host " SETUP COMPLETADO CON EXITO" -ForegroundColor Green
 Write-Host "=======================================================" -ForegroundColor Cyan
-Write-Host "Comandos utiles para comenzar:" -ForegroundColor White
-Write-Host "  - Iniciar entorno de desarrollo:  powershell -File scripts/start-dev.ps1" -ForegroundColor Cyan
-Write-Host "  - Iniciar demostracion rapida:   powershell -File scripts/start-demo.ps1" -ForegroundColor Cyan
-Write-Host "  - Comprobar estado de salud:     powershell -File scripts/check-health.ps1" -ForegroundColor Cyan
-Write-Host "  - Ejecutar todas las pruebas:    powershell -File scripts/run-tests.ps1`n" -ForegroundColor Cyan
+Write-Host "Comandos útiles para comenzar:" -ForegroundColor White
+Write-Host "  - Iniciar Automotors completo:    npm run dev" -ForegroundColor Cyan
+Write-Host "  - Iniciar en modo red local:      npm run dev:lan" -ForegroundColor Cyan
+Write-Host "  - Detener todos los servicios:    npm run dev:stop" -ForegroundColor Cyan
+Write-Host "  - Ejecutar todas las pruebas:     npm test`n" -ForegroundColor Cyan

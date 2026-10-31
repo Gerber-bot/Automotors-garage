@@ -49,7 +49,7 @@ El sistema resuelve dos necesidades fundamentales a través de dos experiencias 
 Antes de comenzar, verifique que su computadora cuente con:
 
 - **Sistema Operativo**: Windows 10 o Windows 11 (64-bit).
-- **PowerShell**: PowerShell 5.1 o PowerShell 7+ (incluido en Windows).
+- **PowerShell**: Windows PowerShell 5.1 (incluido por defecto en Windows) o PowerShell 7+.
 - **Node.js**: Versión 20.x o superior (Node.js 24 recomendado). Descargar desde [nodejs.org](https://nodejs.org/).
 - **npm**: Versión 10.x o superior (se instala automáticamente con Node.js).
 - **Git**: Para clonar el repositorio y sincronizar cambios. Descargar desde [git-scm.com](https://git-scm.com/).
@@ -58,83 +58,98 @@ Antes de comenzar, verifique que su computadora cuente con:
   - `3000`: Interfaz web Next.js (Dashboard y Demos).
   - `4000`: API REST y servicios backend.
 
+*Nota de arquitectura*: No se requiere instalar Docker ni un servidor PostgreSQL externo para el desarrollo y prueba local predeterminado.
+
 ---
 
-## 4. Descargar el Proyecto
+## 4. Estructura del Repositorio
 
-### Opción A — Clonar mediante Git (Recomendado)
-Abra PowerShell o la terminal de Windows y ejecute:
+El proyecto organiza sus herramientas de automatización y ejecución en un directorio centralizado:
+
+```text
+AutomotorsGarage/
+├── Scripts de ejecucion automatica/
+│   ├── INICIAR_COMPLETO.bat           <-- Lanzador desarrollo local estándar
+│   ├── INICIAR_COMPLETO_MODO_LAN.bat  <-- Lanzador modo red local (móviles/tablets)
+│   ├── DETENER_AUTOMOTORS.bat         <-- Detención ordenada de servicios
+│   ├── automotors.ps1                 <-- Controlador PowerShell unificado (START, START-LAN, STOP)
+│   ├── database/                      <-- Sembrado demo y scripts de BD
+│   └── utilities/                     <-- Utilidades de proceso, red y diagnóstico
+├── apps/
+│   ├── backend/                       <-- Servidor API REST y lógica de dominio
+│   └── frontend/                      <-- Aplicación web Next.js 15
+├── packages/
+│   ├── database/                      <-- Cliente dual Drizzle/PGlite y migraciones
+│   ├── obd-core/                      <-- Biblioteca técnica OBD-II (SAE J2012)
+│   └── security-foundation/           <-- Argon2id, JWT y RBAC
+├── docs/                              <-- Documentación arquitectónica y de producto
+├── tests/                             <-- Suites de integración E2E
+├── README.md                          <-- Esta guía
+└── package.json                       <-- Configuración raíz del monorepo
+```
+
+---
+
+## 5. Descargar e Instalar
+
+### Paso 1: Clonar el Repositorio
+Abra PowerShell o la terminal de Windows:
 
 ```bash
 git clone https://github.com/Gerber-bot/Automotors-garage.git
 cd Automotors-garage
 ```
+*(Si utiliza descarga ZIP, descomprima el contenido en una carpeta local).*
 
-### Opción B — Descarga en archivo ZIP
-1. Ingrese a `https://github.com/Gerber-bot/Automotors-garage`.
-2. Haga clic en el botón verde **Code** y seleccione **Download ZIP**.
-3. Descomprima el archivo en una carpeta de su disco local (ejemplo: `C:\Proyectos\Automotors-garage`).
-4. *Nota*: Si utiliza la descarga ZIP, los comandos de `git` no estarán disponibles a menos que inicialice un repositorio local con `git init`.
-
----
-
-## 5. Primera Instalación
-
-Desde la raíz del proyecto en su terminal:
+### Paso 2: Instalar Dependencias
+Desde la raíz del proyecto:
 
 ```bash
-# Instalar dependencias exactas y reproducibles
 npm ci
 ```
+*El comando `npm ci` instala las dependencias de raíz y, mediante un gancho `postinstall`, aprovisiona automáticamente las librerías de `apps/frontend`.*
 
-### Configuración del Entorno (`.env`)
-El proyecto incluye un archivo de plantilla `.env.example`. Los iniciadores automatizados (`.bat`) crean una copia `.env` automáticamente si no existe.
+### Paso 3: Configurar Variables de Entorno
+Copie la plantilla `.env.example` a `.env`:
 
-Si prefiere configurarlo manualmente:
 ```bash
 copy .env.example .env
 ```
-*Aviso de seguridad*: El archivo `.env.example` contiene únicamente valores de plantilla locales y seguros. Nunca guarde secretos productivos ni contraseñas reales en este archivo.
+*(Los lanzadores automáticos crean `.env` a partir de `.env.example` de forma transparente si no existe).*
 
 ---
 
 ## 6. Iniciar la Aplicación en Windows
 
-Automotors Garage cuenta con dos lanzadores principales de un solo clic ubicados en la raíz del repositorio:
+Automotors Garage se inicia **siempre completo** (Backend + Frontend + Base de Datos). 
 
-### 1. `INICIAR_COMPLETO.bat` (Modo Local Estándar)
-Haga doble clic sobre **`INICIAR_COMPLETO.bat`** en el Explorador de Windows o ejecútelo desde la terminal:
+Abra la carpeta **`Scripts de ejecucion automatica`** en el Explorador de Windows:
 
-```cmd
-INICIAR_COMPLETO.bat
-```
+### Opción A — Modo Local Estándar (`INICIAR_COMPLETO.bat`)
+Haga doble clic en **`INICIAR_COMPLETO.bat`** (o ejecute `npm run dev` desde la raíz).
 
-**Qué hace automáticamente**:
-1. Detecta la raíz real del repositorio sin importar la unidad o ruta con espacios.
-2. Comprueba que Node.js y npm estén instalados.
-3. Instala dependencias con `npm ci` si la carpeta `node_modules` no existe.
-4. Prepara el entorno `.env` y las carpetas locales (`.data/`, `.run/`, `.logs/`).
-5. Inicia el Backend en `http://localhost:4000` con persistencia PGlite.
-6. Espera la confirmación de salud (`/health/ready`).
-7. Inicia el Frontend Next.js en `http://localhost:3000`.
-8. Comprueba la disponibilidad HTTP y abre su navegador automáticamente en `http://localhost:3000`.
+**Comportamiento**:
+1. Verifica automáticamente Node.js y npm.
+2. Inicia el Backend en `http://localhost:4000` con almacenamiento PGlite persistente en `.data/postgres_dev/`.
+3. Valida la disponibilidad de la base de datos a través del healthcheck `/health/ready`.
+4. Inicia el Frontend Next.js en `http://localhost:3000`.
+5. Confirma disponibilidad HTTP y abre su navegador en `http://localhost:3000`.
 
-### 2. `INICIAR_COMPLETO_MODO_LAN.bat` (Modo Red Local / Celulares)
-Haga doble clic sobre **`INICIAR_COMPLETO_MODO_LAN.bat`** para habilitar el acceso desde teléfonos móviles, tablets u otras computadoras en la misma red Wi-Fi:
+### Opción B — Modo Red Local / LAN (`INICIAR_COMPLETO_MODO_LAN.bat`)
+Haga doble clic en **`INICIAR_COMPLETO_MODO_LAN.bat`** (o ejecute `npm run dev:lan` desde la raíz).
 
-```cmd
-INICIAR_COMPLETO_MODO_LAN.bat
-```
-
-**Qué hace automáticamente**:
+**Comportamiento**:
 1. Ejecuta todas las validaciones del inicio completo.
-2. Detecta su dirección IP privada real (ejemplo: `192.168.1.50`), descartando adaptadores virtuales (WSL, Hyper-V, VPNs).
-3. Configura Next.js y el backend para escuchar en `0.0.0.0` (todas las interfaces de red).
-4. Muestra en pantalla las direcciones exactas para abrir en su celular o tablet.
+2. Detecta automáticamente la dirección IP privada real de su placa física Wi-Fi o Ethernet (ejemplo: `192.168.1.15`), descartando interfaces virtuales de WSL o VPNs.
+3. Inicia Next.js y el Backend escuchando en todas las interfaces de red (`0.0.0.0`).
+4. Configura la comunicación transparente entre el celular y la API a través del proxy BFF de Next.js.
+5. Muestra en pantalla las direcciones exactas para ingresar desde su teléfono móvil o tableta.
 
-### Detener la Aplicación
-Para finalizar todos los procesos de forma limpia y liberar los puertos:
-Haga doble clic en **`DETENER_AUTOMOTORS.bat`**.
+### Detener los Servicios (`DETENER_AUTOMOTORS.bat`)
+Haga doble clic en **`DETENER_AUTOMOTORS.bat`** (o ejecute `npm run dev:stop` desde la raíz).
+- Detiene los procesos Node pertenecientes a Automotors Garage.
+- Libera limpiamente los puertos 3000 y 4000.
+- Preserva intactos los datos registrados en `.data/` y los logs en `.logs/`.
 
 ---
 
@@ -152,46 +167,56 @@ Una vez iniciado el sistema:
 
 ---
 
-## 8. Guía del Modo LAN (Celulares y Red Local)
+## 8. Guía del Modo LAN (Celulares y Tablets)
 
-Para probar la interfaz responsive desde un teléfono móvil o tableta:
+Para probar la experiencia móvil en un dispositivo físico:
 
-1. Conecte su teléfono móvil a la **misma red Wi-Fi** donde está conectada su computadora.
-2. Inicie la aplicación con **`INICIAR_COMPLETO_MODO_LAN.bat`**.
-3. La consola mostrará su dirección IP detectada. Por ejemplo:
+1. Conecte su teléfono a la **misma red Wi-Fi** donde está conectada su computadora.
+2. Inicie la aplicación con **`INICIAR_COMPLETO_MODO_LAN.bat`** (o `npm run dev:lan`).
+3. La consola mostrará su IP detectada. Por ejemplo:
    - `Landing: http://192.168.1.100:3000/`
    - `Demo Propietario: http://192.168.1.100:3000/demo/propietario`
    - `Demo Taller: http://192.168.1.100:3000/demo/taller`
-4. Abra el navegador de su teléfono (Chrome, Safari, Firefox) e ingrese la dirección indicada.
+4. Ingrese la dirección en el navegador de su teléfono (Chrome, Safari, Firefox).
 
-### Solución de Problemas con el Firewall de Windows
-Si la página no carga en el celular:
-- Asegúrese de que en Windows la red Wi-Fi esté configurada como **Red Privada** (no Pública).
-- Si Windows Firewall solicita permiso al arrancar Node.js, presione **Permitir acceso** en Redes Privadas.
-- *(Opcional / Solo administradores en red confiable)*: Puede autorizar los puertos con este comando en PowerShell:
+### Configuración del Firewall de Windows
+- Asegúrese de que en Windows la red Wi-Fi esté establecida como **Red Privada** (no Pública).
+- Si Windows Firewall consulta permisos al iniciar Node.js, acepte el acceso en Redes Privadas.
+- *(Opcional / Solo administradores en red privada de confianza)*:
   ```powershell
   New-NetFirewallRule -DisplayName "Automotors Dev LAN" -Direction Inbound -LocalPort 3000,4000 -Protocol TCP -Profile Private -Action Allow
   ```
-- **Aviso de seguridad**: El modo LAN es exclusivo para desarrollo y pruebas en redes privadas seguras. Nunca abra puertos hacia internet en su router ni desactive el firewall de Windows.
+- **Seguridad**: El modo LAN no abre puertos en su router ni expone el sistema a internet. Es exclusivamente para pruebas en su red local confiable.
 
 ---
 
-## 9. Base de Datos y Persistencia
+## 9. Comandos de Terminal (`npm`)
 
-- **Motor Predeterminado**: PGlite (PostgreSQL compilado a WebAssembly).
-- **Ubicación de Datos**: `.data/postgres_dev/`.
-- **Persistencia**: Los datos registrados en desarrollo se guardan en su disco duro local y sobreviven a los reinicios.
-- **Semilla de Demostración**: Si desea inicializar datos de prueba en la base de datos del backend:
-  ```bash
-  npm run seed:demo
-  ```
-- **PostgreSQL Nativo**: Preparado en código para conectarse mediante `DB_PROVIDER=postgres` y `DATABASE_URL` (consulte `docs/development/postgresql-local-setup.md`).
+Desde la raíz del repositorio puede utilizar los siguientes comandos directos:
+
+```bash
+# Iniciar stack completo (localhost)
+npm run dev
+
+# Iniciar stack completo en modo red local / celular
+npm run dev:lan
+
+# Detener los servicios en ejecución
+npm run dev:stop
+
+# Sembrado de datos demo en la base de datos
+npm run seed:demo
+
+# Verificación de requisitos del entorno
+npm run dev:check
+
+# Verificación de salud del backend
+npm run dev:health
+```
 
 ---
 
-## 10. Comandos de Verificación y Calidad
-
-Para ejecutar las comprobaciones de calidad del software:
+## 10. Pruebas y Control de Calidad
 
 ```bash
 # 1. Verificación estricta de tipos TypeScript (0 errores)
@@ -212,23 +237,23 @@ npm run build
 ## 11. Solución de Problemas Frecuentes
 
 1. **`node` o `npm` no se reconoce como un comando**:
-   - Node.js no está instalado o no se agregó al PATH del sistema. Reinicie la terminal tras instalar Node.js.
+   - Instale Node.js 20+ y asegúrese de marcar la opción "Add to PATH" durante la instalación. Reinicie su terminal tras instalar.
 2. **Puerto 3000 o 4000 ocupado**:
-   - Ejecute `DETENER_AUTOMOTORS.bat` para liberar instancias previas.
-   - Si otro programa ajeno está usando el puerto, cierre dicho programa o configure un puerto alternativo.
+   - Ejecute `DETENER_AUTOMOTORS.bat` o `npm run dev:stop`.
+   - Si el puerto fue tomado por otra aplicación, cierre ese programa o modifique el puerto en las variables de entorno.
 3. **El Frontend no responde o queda en blanco**:
-   - Verifique los registros en `.logs/frontend_dev.err.log`.
-   - Limpie la caché transitoria de desarrollo eliminando la carpeta `apps/frontend/.next-dev`.
-4. **Error de bloqueo de base de datos (`postmaster.pid`)**:
-   - Sucede tras un cierre forzado del sistema. El backend detecta y remueve automáticamente los bloqueos huérfanos al volver a iniciar.
-5. **Problemas con carpetas sincronizadas en OneDrive**:
-   - Si el proyecto está dentro de OneDrive, la sincronización de archivos puede generar bloqueos transitorios en carpetas de caché (`.next`, `.data`). Se recomienda pausar la sincronización de OneDrive durante sesiones de desarrollo intensivo.
+   - Revise los logs en `.logs/frontend_dev.err.log`.
+   - Elimine la carpeta transitoria de desarrollo `apps/frontend/.next-dev` para regenerar la caché.
+4. **Error de bloqueo `postmaster.pid` en la base de datos**:
+   - Ocurre tras un corte de energía o cierre abrupto de la máquina. El backend comprueba si el proceso anterior sigue vivo y retira automáticamente el bloqueo huérfano.
+5. **Problemas con carpetas en OneDrive**:
+   - Si aloja el repositorio dentro de una carpeta sincronizada por OneDrive, pause la sincronización temporalmente para evitar retardos en archivos de caché.
 
 ---
 
-## 12. Estado Real del Proyecto
+## 12. Estado Real del Software
 
-- **Landing y Demos Públicas**: 100% implementadas y verificadas visualmente. Operan de forma aislada en el cliente con datos sintéticos seguros.
-- **Backend Modular**: Funcional con motor PGlite y validado por 156 pruebas unitarias y de integración.
-- **PostgreSQL 16 Físico**: Preparado en arquitectura dual pero **no validado en producción real** en este entorno.
-- **Estado de Release**: Versión de desarrollo y demostración técnica. No apto para despliegue productivo comercial sin antes completar la auditoría de infraestructura y base de datos nativa.
+- **Landing y Demos Públicas**: 100% funcionales en cliente con datos sintéticos aislados.
+- **Backend Modular**: En funcionamiento con motor PGlite WASM, validado con 156 tests unitarios y de integración.
+- **PostgreSQL 16 Nativo**: Arquitectura dual lista en código; pendiente de validación física sobre servidor físico PostgreSQL de producción.
+- **Estado de Versión**: Versión de desarrollo, validación y demostración técnica.

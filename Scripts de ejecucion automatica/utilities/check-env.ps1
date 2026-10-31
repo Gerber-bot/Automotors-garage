@@ -68,7 +68,7 @@ try {
 }
 
 # 4. Estructura del Repositorio
-$requiredDirs = @("apps/backend", "apps/frontend", "packages/database", "packages/obd-core", "packages/security-foundation", "scripts", "docs")
+$requiredDirs = @("apps/backend", "apps/frontend", "packages/database", "packages/obd-core", "packages/security-foundation", "Scripts de ejecucion automatica", "docs")
 $missingDirs = @()
 foreach ($d in $requiredDirs) {
     if (-not (Test-Path (Join-Path $repoRoot $d))) {

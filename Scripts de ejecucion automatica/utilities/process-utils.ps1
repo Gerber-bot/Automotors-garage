@@ -137,11 +137,11 @@ function Get-ActiveStoredPid {
     if (Test-Path $PidFilePath) {
         $rawPid = Get-Content $PidFilePath -ErrorAction SilentlyContinue
         if ($rawPid -match '^\d+$') {
-            $pId = [int]$rawPid
-            $proc = Get-Process -Id $pId -ErrorAction SilentlyContinue
+            $parsedPid = [int]$rawPid
+            $proc = Get-Process -Id $parsedPid -ErrorAction SilentlyContinue
             if ($proc -and ($proc.ProcessName -like "*node*")) {
-                if (Test-IsAutomotorsProcess -ProcId $pId -ProcessType $ProcessType) {
-                    return $pId
+                if (Test-IsAutomotorsProcess -ProcId $parsedPid -ProcessType $ProcessType) {
+                    return $parsedPid
                 }
             }
             # Orphan or non-project PID: remove stale file
