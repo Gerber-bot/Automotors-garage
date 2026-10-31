@@ -42,6 +42,9 @@ jobs:
       - name: Static Typecheck Verification (0 errors enforced)
         run: npm run typecheck
 
+      - name: Code Quality & Lint Verification (0 errors enforced)
+        run: npm run lint
+
       - name: Run Complete Test Suite
         env:
           POSTGRES_HOST: localhost
@@ -51,6 +54,9 @@ jobs:
           POSTGRES_DB: automotors_garage_test
           NODE_ENV: test
         run: npm test
+
+      - name: Next.js Production Build Verification
+        run: npm run build
 
       - name: Verify Demo Data Seeding Idempotency
         env:
