@@ -36,7 +36,8 @@ function Test-IsAutomotorsProcess([int]$procId) {
         $cimProc = Get-CimInstance Win32_Process -Filter "ProcessId = $procId" -ErrorAction SilentlyContinue
         if ($cimProc -and $cimProc.CommandLine) {
             $cmd = $cimProc.CommandLine
-            if ($cmd -like "*AutomotorsGarage*" -or $cmd -like "*apps/backend/src/main.ts*" -or $cmd -like "*seed-demo*") {
+            $leaf = Split-Path -Leaf $repoRoot
+            if ($cmd -like "*$repoRoot*" -or $cmd -like "*$leaf*" -or $cmd -like "*AutomotorsGarage*" -or $cmd -like "*Automotors-garage*" -or $cmd -like "*apps/backend*" -or $cmd -like "*apps\backend*" -or $cmd -like "*main.ts*" -or $cmd -like "*seed-demo*") {
                 return $true
             }
         }

@@ -2,24 +2,23 @@
 setlocal enabledelayedexpansion
 chcp 65001 >nul
 
-cd /d "%~dp0"
+rem Determinar la raíz absoluta del repositorio
+set "REPO_ROOT=%~dp0"
+cd /d "%REPO_ROOT%"
 
 echo =======================================================
-echo  AUTOMOTORS GARAGE -- DETENER SERVICIOS
+echo  AUTOMOTORS GARAGE -- DETENCION DE SERVICIOS
 echo =======================================================
 echo.
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\powershell\stop-dev.ps1" -Port 4000
+rem Detener de forma limpia frontend (puerto 3000) y backend (puerto 4000)
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%REPO_ROOT%scripts\powershell\stop-stack.ps1" -BackendPort 4000 -FrontendPort 3000
 if %ERRORLEVEL% NEQ 0 (
     echo.
-    echo =======================================================
-    echo  SE PRODUJO UN ERROR AL DETENER LOS SERVICIOS
-    echo =======================================================
-    echo  Codigo de salida: %ERRORLEVEL%
+    echo [ADVERTENCIA] La detención reportó advertencias o procesos rebeldes.
+    echo Si persisten puertos tomados, ejecute en PowerShell:
+    echo powershell -File "%REPO_ROOT%scripts\powershell\stop-stack.ps1" -Force
     echo.
-    echo Presione cualquier tecla para salir...
-    pause >nul
-    exit /b %ERRORLEVEL%
 )
 
 echo.

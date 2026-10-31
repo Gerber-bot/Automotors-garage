@@ -36,7 +36,8 @@ function Test-IsFrontendProcess([int]$procId) {
         $cimProc = Get-CimInstance Win32_Process -Filter "ProcessId = $procId" -ErrorAction SilentlyContinue
         if ($cimProc -and $cimProc.CommandLine) {
             $cmd = $cimProc.CommandLine
-            if ($cmd -like "*apps/frontend*" -or $cmd -like "*next*" -or $cmd -like "*AutomotorsGarage*") {
+            $leaf = Split-Path -Leaf $repoRoot
+            if ($cmd -like "*$repoRoot*" -or $cmd -like "*$leaf*" -or $cmd -like "*apps/frontend*" -or $cmd -like "*apps\frontend*" -or $cmd -like "*next*" -or $cmd -like "*AutomotorsGarage*" -or $cmd -like "*Automotors-garage*") {
                 return $true
             }
         }

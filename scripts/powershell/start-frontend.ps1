@@ -85,8 +85,12 @@ if ($portConn) {
 
 # 3. Validar dependencias locales
 if (-not (Test-Path (Join-Path $frontendDir "node_modules")) -or -not (Test-Path $nextBin)) {
-    Write-Host "  [INFO] Dependencias de frontend faltantes. Instalando..." -ForegroundColor Yellow
-    npm --prefix $frontendDir install
+    Write-Host "  [INFO] Dependencias de frontend faltantes. Instalando con npm ci..." -ForegroundColor Yellow
+    npm --prefix $frontendDir ci
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "  [WARN] Falló npm ci; reintentando con npm install..." -ForegroundColor Yellow
+        npm --prefix $frontendDir install
+    }
     if ($LASTEXITCODE -ne 0) {
         Write-Host "  [FAIL] Error al instalar dependencias de apps/frontend." -ForegroundColor Red
         exit 1

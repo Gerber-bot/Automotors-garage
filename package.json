@@ -9,6 +9,7 @@
     "@automotors/security-foundation": "file:./packages/security-foundation"
   },
   "scripts": {
+    "postinstall": "npm --prefix apps/frontend ci",
     "dev": "powershell -ExecutionPolicy Bypass -File scripts/powershell/start-dev.ps1",
     "dev:demo": "powershell -ExecutionPolicy Bypass -File scripts/powershell/start-demo.ps1",
     "dev:stop": "powershell -ExecutionPolicy Bypass -File scripts/powershell/stop-dev.ps1",
