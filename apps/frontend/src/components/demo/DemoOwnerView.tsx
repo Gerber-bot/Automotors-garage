@@ -11,18 +11,24 @@ import {
   Info,
   X,
   AlertTriangle,
+  RotateCcw,
+  CheckCircle2,
+  Calendar,
+  Gauge,
+  FileText,
 } from 'lucide-react';
 
 export interface SyntheticOwnerVehicle {
   id: string;
   plate: string;
-  vin: string;
+  vin?: string;
   make: string;
   model: string;
   year: number;
-  engine: string;
+  engine?: string;
   currentMileage: number;
-  fuelType: string;
+  fuelType?: string;
+  isCustom?: boolean;
 }
 
 export interface SyntheticTimelineEvent {
@@ -46,6 +52,8 @@ export interface SyntheticPrediction {
   officialSource: string;
 }
 
+const STORAGE_KEY = 'automotors_demo_owner_v1';
+
 const INITIAL_VEHICLES: SyntheticOwnerVehicle[] = [
   {
     id: 'veh-toyota-demo',
@@ -57,6 +65,7 @@ const INITIAL_VEHICLES: SyntheticOwnerVehicle[] = [
     engine: '1.8L Hybrid 16v (2ZR-FXE)',
     currentMileage: 38500,
     fuelType: 'Híbrido',
+    isCustom: false,
   },
   {
     id: 'veh-ford-demo',
@@ -68,6 +77,7 @@ const INITIAL_VEHICLES: SyntheticOwnerVehicle[] = [
     engine: '3.0L V6 Turbo Diesel',
     currentMileage: 48500,
     fuelType: 'Diésel',
+    isCustom: false,
   },
 ];
 
@@ -161,8 +171,10 @@ export function DemoOwnerView() {
   const [selectedVehicleId, setSelectedVehicleId] = React.useState<string>('veh-toyota-demo');
   const [events, setEvents] = React.useState<SyntheticTimelineEvent[]>(INITIAL_EVENTS);
   const [activeTab, setActiveTab] = React.useState<'timeline' | 'predictions' | 'specs'>('timeline');
+  const [isHydrated, setIsHydrated] = React.useState<boolean>(false);
+  const [feedbackMessage, setFeedbackMessage] = React.useState<string | null>(null);
 
-  // Modal states
+  // Modals
   const [serviceModalOpen, setServiceModalOpen] = React.useState(false);
   const [newVehicleModalOpen, setNewVehicleModalOpen] = React.useState(false);
 
@@ -178,13 +190,92 @@ export function DemoOwnerView() {
   const [newPlate, setNewPlate] = React.useState<string>('');
   const [newMake, setNewMake] = React.useState<string>('');
   const [newModel, setNewModel] = React.useState<string>('');
-  const [newYear, setNewYear] = React.useState<string>('2021');
-  const [newMileage, setNewMileage] = React.useState<string>('25000');
+  const [newYear, setNewYear] = React.useState<string>('2022');
+  const [newMileage, setNewMileage] = React.useState<string>('30000');
+  const [newEngine, setNewEngine] = React.useState<string>('');
+  const [newFuelType, setNewFuelType] = React.useState<string>('');
+  const [newVin, setNewVin] = React.useState<string>('');
   const [vehicleFormError, setVehicleFormError] = React.useState<string | null>(null);
 
-  const currentVehicle = vehicles.find((v) => v.id === selectedVehicleId) || vehicles[0]!;
-  const vehicleEvents = events.filter((e) => e.vehicleId === currentVehicle.id);
+  // Safe client hydration from localStorage
+  React.useEffect(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed.vehicles) && parsed.vehicles.length > 0) {
+          setVehicles(parsed.vehicles);
+          if (parsed.selectedVehicleId && parsed.vehicles.some((v: SyntheticOwnerVehicle) => v.id === parsed.selectedVehicleId)) {
+            setSelectedVehicleId(parsed.selectedVehicleId);
+          } else {
+            setSelectedVehicleId(parsed.vehicles[0].id);
+          }
+        }
+        if (Array.isArray(parsed.events)) {
+          setEvents(parsed.events);
+        }
+      }
+    } catch {
+      // LocalStorage access failed or invalid JSON, maintain initial defaults
+    } finally {
+      setIsHydrated(true);
+    }
+  }, []);
+
+  // Save to localStorage upon mutation (only once hydrated)
+  React.useEffect(() => {
+    if (!isHydrated) return;
+    try {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({
+          vehicles,
+          selectedVehicleId,
+          events,
+        })
+      );
+    } catch {
+      // Silent error in private/restricted storage
+    }
+  }, [vehicles, selectedVehicleId, events, isHydrated]);
+
+  const currentVehicle =
+    vehicles.find((v) => v.id === selectedVehicleId) || vehicles[0] || INITIAL_VEHICLES[0]!;
+
+  // Keep serviceMileage synced with selected vehicle
+  React.useEffect(() => {
+    if (currentVehicle) {
+      setServiceMileage(String(currentVehicle.currentMileage));
+    }
+  }, [currentVehicle.id, currentVehicle.currentMileage]);
+
+  // Maintenance events for current vehicle, sorted date descending
+  const vehicleEvents = React.useMemo(() => {
+    return events
+      .filter((e) => e.vehicleId === currentVehicle.id)
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [events, currentVehicle.id]);
+
   const vehiclePredictions = PREDICTIONS[currentVehicle.id] || [];
+
+  const handleResetDemo = () => {
+    if (typeof window !== 'undefined') {
+      const confirmed = window.confirm(
+        '¿Deseás restablecer los datos de la demostración de Mi Automotors a sus valores iniciales?'
+      );
+      if (!confirmed) return;
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+      } catch {
+        // ignore
+      }
+      setVehicles(INITIAL_VEHICLES);
+      setSelectedVehicleId(INITIAL_VEHICLES[0]!.id);
+      setEvents(INITIAL_EVENTS);
+      setFeedbackMessage('Demostración restablecida a los valores iniciales.');
+      setTimeout(() => setFeedbackMessage(null), 4000);
+    }
+  };
 
   const handleAddService = (e: React.FormEvent) => {
     e.preventDefault();
@@ -192,7 +283,9 @@ export function DemoOwnerView() {
 
     const km = parseInt(serviceMileage, 10);
     if (isNaN(km) || km < currentVehicle.currentMileage) {
-      setServiceFormError(`El kilometraje no puede ser inferior al actual (${currentVehicle.currentMileage} km).`);
+      setServiceFormError(
+        `El kilometraje ingresado (${km || 0} km) no puede ser inferior al odómetro actual (${currentVehicle.currentMileage.toLocaleString()} km).`
+      );
       return;
     }
     if (!serviceTitle.trim()) {
@@ -211,54 +304,87 @@ export function DemoOwnerView() {
       notes: serviceNotes.trim() || 'Servicio declarado por el propietario en demostración.',
     };
 
-    setEvents([newEvent, ...events]);
+    setEvents((prev) => [newEvent, ...prev]);
 
     // Update current vehicle mileage if higher
     if (km > currentVehicle.currentMileage) {
-      setVehicles(
-        vehicles.map((v) => (v.id === currentVehicle.id ? { ...v, currentMileage: km } : v))
+      setVehicles((prev) =>
+        prev.map((v) => (v.id === currentVehicle.id ? { ...v, currentMileage: km } : v))
       );
     }
 
     setServiceModalOpen(false);
     setServiceNotes('');
+    setFeedbackMessage('Mantenimiento declarado exitosamente en la memoria de este navegador.');
+    setTimeout(() => setFeedbackMessage(null), 4000);
   };
 
   const handleAddVehicle = (e: React.FormEvent) => {
     e.preventDefault();
     setVehicleFormError(null);
 
-    const plateClean = newPlate.trim().toUpperCase();
-    if (plateClean.length < 6) {
-      setVehicleFormError('Ingresá una patente válida (ej. AB123CD o ABC123).');
+    const plateClean = newPlate.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (plateClean.length < 6 || plateClean.length > 9) {
+      setVehicleFormError('Ingresá una patente válida (entre 6 y 9 caracteres alfanuméricos, ej. AF123CD o ABC123).');
       return;
     }
+
+    // Duplicate check
+    const duplicate = vehicles.some((v) => v.plate.replace(/[^A-Z0-9]/g, '').toUpperCase() === plateClean);
+    if (duplicate) {
+      setVehicleFormError(`Ya existe un vehículo registrado con la patente ${plateClean} en tu garaje.`);
+      return;
+    }
+
     if (!newMake.trim() || !newModel.trim()) {
       setVehicleFormError('Completá la marca y el modelo del vehículo.');
       return;
     }
 
-    const km = parseInt(newMileage, 10) || 0;
-    const yr = parseInt(newYear, 10) || 2020;
+    const yr = parseInt(newYear, 10);
+    const maxYear = new Date().getFullYear() + 1;
+    if (isNaN(yr) || yr < 1900 || yr > maxYear) {
+      setVehicleFormError(`El año debe ser un número válido entre 1900 y ${maxYear}.`);
+      return;
+    }
+
+    const km = parseInt(newMileage, 10);
+    if (isNaN(km) || km < 0) {
+      setVehicleFormError('El kilometraje debe ser un número entero no negativo (0 o mayor).');
+      return;
+    }
+
+    // Optional fields handling - never invent fake VIN
+    const cleanedVin = newVin.trim().toUpperCase();
+    const cleanedEngine = newEngine.trim();
+    const cleanedFuel = newFuelType.trim();
 
     const newVeh: SyntheticOwnerVehicle = {
       id: `veh-user-${Date.now()}`,
       plate: plateClean,
-      vin: `DEMO${Date.now()}`,
+      vin: cleanedVin.length > 0 ? cleanedVin : undefined,
       make: newMake.trim(),
       model: newModel.trim(),
       year: yr,
-      engine: 'Motor Estándar',
+      engine: cleanedEngine.length > 0 ? cleanedEngine : undefined,
       currentMileage: km,
-      fuelType: 'Nafta',
+      fuelType: cleanedFuel.length > 0 ? cleanedFuel : undefined,
+      isCustom: true,
     };
 
-    setVehicles([...vehicles, newVeh]);
+    setVehicles((prev) => [...prev, newVeh]);
     setSelectedVehicleId(newVeh.id);
     setNewVehicleModalOpen(false);
     setNewPlate('');
     setNewMake('');
     setNewModel('');
+    setNewYear('2022');
+    setNewMileage('30000');
+    setNewEngine('');
+    setNewFuelType('');
+    setNewVin('');
+    setFeedbackMessage(`Vehículo ${newVeh.make} ${newVeh.model} (${newVeh.plate}) agregado y seleccionado.`);
+    setTimeout(() => setFeedbackMessage(null), 4000);
   };
 
   return (
@@ -273,21 +399,39 @@ export function DemoOwnerView() {
               MODO DEMOSTRACIÓN
             </span>
             <span className="text-slate-300">
-              Mi Automotors · Datos sintéticos en memoria local. No interactúa con el servidor ni datos reales.
+              Mi Automotors · Los cambios de esta demostración se guardan únicamente en este navegador (localStorage).
             </span>
           </div>
-          <Link
-            href="/"
-            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md bg-slate-900 hover:bg-slate-800 text-slate-200 hover:text-white border border-slate-700 font-semibold transition-colors"
-          >
-            <ArrowLeft className="h-3.5 w-3.5 text-sky-400" />
-            <span>Volver a la Landing</span>
-          </Link>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleResetDemo}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700 font-semibold transition-colors text-[11px]"
+              title="Restablecer flota y servicios a valores originales"
+            >
+              <RotateCcw className="h-3 w-3 text-sky-400" />
+              <span>Restablecer demostración</span>
+            </button>
+            <Link
+              href="/"
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md bg-slate-900 hover:bg-slate-800 text-slate-200 hover:text-white border border-slate-700 font-semibold transition-colors"
+            >
+              <ArrowLeft className="h-3.5 w-3.5 text-sky-400" />
+              <span>Volver a la Landing</span>
+            </Link>
+          </div>
         </div>
       </div>
 
+      {/* FEEDBACK TOAST BANNER */}
+      {feedbackMessage && (
+        <div className="bg-emerald-950/90 border-b border-emerald-700 px-4 py-2 text-emerald-200 text-xs flex items-center justify-center gap-2 animate-fadeIn">
+          <CheckCircle2 className="h-4 w-4 text-emerald-400 flex-shrink-0" />
+          <span>{feedbackMessage}</span>
+        </div>
+      )}
+
       {/* ==================================================================== */}
-      {/* HEADER & VEHICLE SWITCHER                                            */}
+      {/* HEADER                                                               */}
       {/* ==================================================================== */}
       <header className="border-b border-slate-800 bg-slate-900/60 backdrop-blur sticky top-0 z-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -296,13 +440,13 @@ export function DemoOwnerView() {
               <CarFront className="h-5 w-5" />
             </div>
             <div>
-              <h1 className="text-sm font-bold text-white flex items-center gap-2">
-                <span>Mi Automotors</span>
-                <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 border border-slate-700 text-sky-400 font-mono">
+              <div className="flex items-center gap-2">
+                <h1 className="text-sm font-bold text-white">Mi Automotors</h1>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-sky-400 font-mono">
                   DEMO PÚBLICA
                 </span>
-              </h1>
-              <p className="text-xs text-slate-400">Garaje digital de propietario particular</p>
+              </div>
+              <p className="text-xs text-slate-400">Garaje digital y pasaporte de mantenimiento particular</p>
             </div>
           </div>
 
@@ -323,261 +467,402 @@ export function DemoOwnerView() {
             </button>
           </div>
         </div>
-
-        {/* VEHICLE SELECTOR PILLS */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-3 flex items-center gap-2 overflow-x-auto">
-          {vehicles.map((v) => (
-            <button
-              key={v.id}
-              onClick={() => setSelectedVehicleId(v.id)}
-              className={`px-3 py-2 rounded-xl text-left border transition-all flex items-center gap-3 flex-shrink-0 ${
-                v.id === currentVehicle.id
-                  ? 'bg-slate-900 border-sky-500 text-white shadow-md'
-                  : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
-              }`}
-            >
-              <div className="h-7 w-7 rounded-lg bg-sky-500/10 text-sky-400 flex items-center justify-center font-bold text-xs">
-                {v.make.substring(0, 2).toUpperCase()}
-              </div>
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-bold text-white">{v.make} {v.model}</span>
-                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-sky-300 font-semibold">
-                    {v.plate}
-                  </span>
-                </div>
-                <span className="text-[11px] font-mono text-slate-400">
-                  {v.currentMileage.toLocaleString()} km
-                </span>
-              </div>
-            </button>
-          ))}
-        </div>
       </header>
 
       {/* ==================================================================== */}
-      {/* MAIN CONTENT AREA                                                    */}
+      {/* RESPONSIVE LAYOUT: SIDEBAR (DESKTOP) + MAIN CONTENT                   */}
       {/* ==================================================================== */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6 flex-1 w-full">
-        {/* VEHICLE QUICK SUMMARY CARD */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/60 border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-lg sm:text-xl font-extrabold text-white">
-                {currentVehicle.make} {currentVehicle.model} ({currentVehicle.year})
-              </h2>
-              <span className="px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-mono font-bold text-xs">
-                {currentVehicle.plate}
-              </span>
-            </div>
-            <p className="text-xs font-mono text-slate-400">
-              VIN: {currentVehicle.vin} · Motor: {currentVehicle.engine} · Combustible: {currentVehicle.fuelType}
-            </p>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-right">
-              <span className="text-[10px] text-slate-400 uppercase font-semibold block">Odómetro Actual</span>
-              <span className="text-base sm:text-lg font-mono font-bold text-emerald-400">
-                {currentVehicle.currentMileage.toLocaleString()} km
-              </span>
-            </div>
-            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-right">
-              <span className="text-[10px] text-slate-400 uppercase font-semibold block">Servicios Registrados</span>
-              <span className="text-base sm:text-lg font-mono font-bold text-sky-400">
-                {vehicleEvents.length} eventos
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* NAVIGATION TABS */}
-        <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
-          <button
-            onClick={() => setActiveTab('timeline')}
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${
-              activeTab === 'timeline'
-                ? 'bg-slate-800 text-sky-400 shadow'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            Historial de Mantenimiento ({vehicleEvents.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('predictions')}
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${
-              activeTab === 'predictions'
-                ? 'bg-slate-800 text-emerald-400 shadow'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            Orientación Preventiva ({vehiclePredictions.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('specs')}
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors ${
-              activeTab === 'specs'
-                ? 'bg-slate-800 text-slate-200 shadow'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            Ficha Técnica
-          </button>
-        </div>
-
-        {/* TAB 1: TIMELINE */}
-        {activeTab === 'timeline' && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between text-xs text-slate-400">
-              <span>Línea de tiempo cronológica con distinción de origen</span>
-              <div className="flex items-center gap-3">
-                <span className="flex items-center gap-1">
-                  <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                  <span>Certificado por Taller</span>
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="h-2 w-2 rounded-full bg-slate-400" />
-                  <span>Declarado por Dueño</span>
-                </span>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1 w-full">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          {/* ================================================================ */}
+          {/* LEFT COLUMN: GARAJE DIGITAL (VEHICLE LIST)                       */}
+          {/* ================================================================ */}
+          <aside className="lg:col-span-4 space-y-4">
+            <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xs font-bold text-slate-200 uppercase tracking-wider">Mi Garaje Digital</h2>
+                  <span className="text-[11px] text-slate-400">{vehicles.length} unidades registradas</span>
+                </div>
+                <button
+                  onClick={() => setNewVehicleModalOpen(true)}
+                  className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 transition-colors"
+                  title="Agregar nuevo vehículo"
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
               </div>
-            </div>
 
-            {vehicleEvents.length === 0 ? (
-              <div className="p-8 rounded-2xl bg-slate-900/40 border border-slate-800 text-center space-y-2">
-                <Clock className="h-8 w-8 text-slate-500 mx-auto" />
-                <h3 className="text-sm font-semibold text-slate-300">Sin mantenimientos registrados</h3>
-                <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                  Registrá el primer servicio con el botón superior para comenzar tu pasaporte digital.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {vehicleEvents.map((evt) => (
-                  <div
-                    key={evt.id}
-                    className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 transition-colors space-y-2"
-                  >
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-bold text-white">{evt.title}</span>
-                        {evt.origin === 'WORKSHOP_CERTIFIED' ? (
-                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center gap-1">
-                            <ShieldCheck className="h-3 w-3" />
-                            <span>TALLER CERTIFICADO</span>
-                          </span>
-                        ) : (
-                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300">
-                            DECLARADO POR DUEÑO
-                          </span>
-                        )}
-                        <span className="text-[10px] text-slate-400 px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 font-mono">
-                          {evt.category}
+              {/* VEHICLE LIST CARDS */}
+              <div className="space-y-2">
+                {vehicles.map((v) => {
+                  const isSelected = v.id === currentVehicle.id;
+                  const vEventsCount = events.filter((e) => e.vehicleId === v.id).length;
+                  return (
+                    <button
+                      key={v.id}
+                      onClick={() => setSelectedVehicleId(v.id)}
+                      className={`w-full text-left p-3.5 rounded-xl border transition-all flex flex-col gap-2 ${
+                        isSelected
+                          ? 'bg-slate-900 border-sky-500 ring-1 ring-sky-500/30 text-white shadow-lg shadow-sky-950/20'
+                          : 'bg-slate-950/60 border-slate-800/80 text-slate-400 hover:text-slate-200 hover:border-slate-700 hover:bg-slate-900/40'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2.5">
+                          <div
+                            className={`h-8 w-8 rounded-lg flex items-center justify-center font-bold text-xs flex-shrink-0 ${
+                              isSelected
+                                ? 'bg-sky-500 text-slate-950 font-black'
+                                : 'bg-slate-800 text-sky-400'
+                            }`}
+                          >
+                            {v.make.substring(0, 2).toUpperCase()}
+                          </div>
+                          <div>
+                            <span className="text-xs font-bold text-white block leading-tight">
+                              {v.make} {v.model}
+                            </span>
+                            <span className="text-[11px] text-slate-400">Año {v.year}</span>
+                          </div>
+                        </div>
+
+                        <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-950 border border-slate-800 text-sky-300 font-bold">
+                          {v.plate}
                         </span>
                       </div>
-                      <div className="flex items-center gap-3 text-xs font-mono text-slate-400">
-                        <span className="font-bold text-slate-200">{evt.mileage.toLocaleString()} km</span>
-                        <span>·</span>
-                        <span>{evt.date}</span>
-                      </div>
-                    </div>
 
-                    <p className="text-xs text-slate-300 leading-relaxed">{evt.notes}</p>
-
-                    {evt.workshopName && (
-                      <div className="pt-1 text-[11px] text-slate-400 flex items-center gap-1 font-medium">
-                        <span className="text-slate-500">Emisor:</span>
-                        <span className="text-slate-300">{evt.workshopName}</span>
+                      <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 pt-1 border-t border-slate-800/60">
+                        <span className="flex items-center gap-1 text-slate-300">
+                          <Gauge className="h-3 w-3 text-slate-500" />
+                          <span>{v.currentMileage.toLocaleString()} km</span>
+                        </span>
+                        <span className="text-[10px] text-slate-400">
+                          {vEventsCount} {vEventsCount === 1 ? 'servicio' : 'servicios'}
+                        </span>
                       </div>
-                    )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="pt-2 border-t border-slate-800/60">
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  Podés cambiar de unidad haciendo clic sobre cualquier tarjeta. Los servicios agregados impactan
+                  exclusivamente sobre el vehículo activo.
+                </p>
+              </div>
+            </div>
+
+            {/* QUICK ACTIONS BOX */}
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-900/80 to-slate-950 border border-slate-800 space-y-3">
+              <span className="text-xs font-bold text-slate-300 block">Acciones Rápidas</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-2">
+                <button
+                  onClick={() => setServiceModalOpen(true)}
+                  className="w-full py-2 px-3 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-2 transition-colors shadow-sm"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>Declarar Mantenimiento</span>
+                </button>
+                <button
+                  onClick={() => setNewVehicleModalOpen(true)}
+                  className="w-full py-2 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-semibold text-xs flex items-center justify-center gap-2 transition-colors"
+                >
+                  <CarFront className="h-3.5 w-3.5 text-sky-400" />
+                  <span>Agregar Otro Vehículo</span>
+                </button>
+              </div>
+            </div>
+          </aside>
+
+          {/* ================================================================ */}
+          {/* RIGHT COLUMN: VEHICLE DETAILS, TIMELINE & TABS                    */}
+          {/* ================================================================ */}
+          <div className="lg:col-span-8 space-y-6">
+            {/* CURRENT VEHICLE HERO BANNER */}
+            <div className="p-5 sm:p-6 rounded-2xl bg-slate-900/70 border border-slate-800 space-y-4">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <h2 className="text-xl sm:text-2xl font-black text-white">
+                      {currentVehicle.make} {currentVehicle.model}
+                    </h2>
+                    <span className="px-2.5 py-0.5 rounded-lg bg-sky-500/10 border border-sky-500/30 text-sky-400 font-mono font-bold text-xs">
+                      {currentVehicle.plate}
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300 text-xs font-semibold">
+                      {currentVehicle.year}
+                    </span>
                   </div>
-                ))}
+                  <p className="text-xs text-slate-400">
+                    {currentVehicle.engine ? `Motor: ${currentVehicle.engine}` : 'Motor: No informado'} ·{' '}
+                    {currentVehicle.fuelType ? `Combustible: ${currentVehicle.fuelType}` : 'Combustible: No informado'}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div className="px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-right min-w-[120px]">
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold block">Odómetro</span>
+                    <span className="text-base sm:text-lg font-mono font-bold text-emerald-400">
+                      {currentVehicle.currentMileage.toLocaleString()} km
+                    </span>
+                  </div>
+                  <div className="px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-right min-w-[120px]">
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold block">Historial</span>
+                    <span className="text-base sm:text-lg font-mono font-bold text-sky-400">
+                      {vehicleEvents.length} {vehicleEvents.length === 1 ? 'evento' : 'eventos'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* NAVIGATION TABS */}
+            <div className="flex items-center gap-2 border-b border-slate-800 pb-2 overflow-x-auto">
+              <button
+                onClick={() => setActiveTab('timeline')}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors whitespace-nowrap ${
+                  activeTab === 'timeline'
+                    ? 'bg-slate-800 text-sky-400 shadow'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
+                }`}
+              >
+                Historial de Mantenimiento ({vehicleEvents.length})
+              </button>
+              <button
+                onClick={() => setActiveTab('predictions')}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors whitespace-nowrap ${
+                  activeTab === 'predictions'
+                    ? 'bg-slate-800 text-emerald-400 shadow'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
+                }`}
+              >
+                Orientación Preventiva ({vehiclePredictions.length})
+              </button>
+              <button
+                onClick={() => setActiveTab('specs')}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors whitespace-nowrap ${
+                  activeTab === 'specs'
+                    ? 'bg-slate-800 text-slate-200 shadow'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
+                }`}
+              >
+                Ficha Técnica y Datos Declarados
+              </button>
+            </div>
+
+            {/* TAB 1: TIMELINE */}
+            {activeTab === 'timeline' && (
+              <div className="space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-400">
+                  <span>Línea de tiempo cronológica ordenada por fecha más reciente</span>
+                  <div className="flex items-center gap-3">
+                    <span className="flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                      <span className="text-slate-300">Taller Certificado</span>
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-slate-400" />
+                      <span className="text-slate-300">Declarado por Titular</span>
+                    </span>
+                  </div>
+                </div>
+
+                {vehicleEvents.length === 0 ? (
+                  <div className="p-10 rounded-2xl bg-slate-900/40 border border-slate-800 text-center space-y-3">
+                    <Clock className="h-10 w-10 text-slate-500 mx-auto" />
+                    <div className="space-y-1">
+                      <h3 className="text-sm font-bold text-slate-200">Sin mantenimientos registrados</h3>
+                      <p className="text-xs text-slate-400 max-w-md mx-auto">
+                        Este vehículo aún no cuenta con intervenciones anotadas en su pasaporte digital. Podés cargar
+                        tu primer comprobante o service realizado para comenzar su historial.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setServiceModalOpen(true)}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition-colors shadow-sm"
+                    >
+                      <Plus className="h-4 w-4" />
+                      <span>Registrar Primer Servicio</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {vehicleEvents.map((evt) => (
+                      <div
+                        key={evt.id}
+                        className="p-4 sm:p-5 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 transition-colors space-y-2.5"
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-bold text-white">{evt.title}</span>
+                            {evt.origin === 'WORKSHOP_CERTIFIED' ? (
+                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center gap-1">
+                                <ShieldCheck className="h-3 w-3" />
+                                <span>TALLER CERTIFICADO</span>
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300">
+                                DECLARADO POR TITULAR
+                              </span>
+                            )}
+                            <span className="text-[10px] text-slate-400 px-2 py-0.5 rounded bg-slate-950 border border-slate-800 font-mono">
+                              {evt.category}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-3 text-xs font-mono text-slate-400">
+                            <span className="font-bold text-emerald-400 flex items-center gap-1">
+                              <Gauge className="h-3.5 w-3.5 text-slate-500" />
+                              <span>{evt.mileage.toLocaleString()} km</span>
+                            </span>
+                            <span>·</span>
+                            <span className="flex items-center gap-1 text-slate-300">
+                              <Calendar className="h-3.5 w-3.5 text-slate-500" />
+                              <span>{evt.date}</span>
+                            </span>
+                          </div>
+                        </div>
+
+                        <p className="text-xs text-slate-300 leading-relaxed">{evt.notes}</p>
+
+                        {evt.workshopName && (
+                          <div className="pt-1.5 border-t border-slate-800/60 text-[11px] text-slate-400 flex items-center gap-1 font-medium">
+                            <span className="text-slate-500">Emisor registrado:</span>
+                            <span className="text-slate-300">{evt.workshopName}</span>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB 2: PREDICTIONS */}
+            {activeTab === 'predictions' && (
+              <div className="space-y-4">
+                <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 flex items-start gap-3 text-xs text-slate-300">
+                  <Info className="h-4 w-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+                  <p>
+                    <strong className="text-emerald-400">Descargo técnico obligatorio:</strong> La orientación
+                    predictiva se basa en los planes de mantenimiento oficial del fabricante según tiempo y kilometraje.
+                    Cualquier reemplazo o servicio debe confirmarse mediante inspección física en un taller calificado.
+                  </p>
+                </div>
+
+                {vehiclePredictions.length === 0 ? (
+                  <div className="p-8 rounded-2xl bg-slate-900/40 border border-slate-800 text-center space-y-2">
+                    <Info className="h-8 w-8 text-slate-500 mx-auto" />
+                    <h3 className="text-sm font-semibold text-slate-300">
+                      No hay recomendaciones de mantenimiento verificadas disponibles para este vehículo.
+                    </h3>
+                    <p className="text-xs text-slate-500 max-w-md mx-auto">
+                      Las predicciones oficiales automáticas requieren un plan de servicio homologado por fabricante
+                      en la base de conocimiento para este modelo y motorización específicos.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {vehiclePredictions.map((pred, i) => (
+                      <div
+                        key={i}
+                        className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-3 flex flex-col justify-between"
+                      >
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-white">{pred.category}</span>
+                            <span
+                              className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
+                                pred.status === 'DUE_SOON'
+                                  ? 'bg-amber-500/10 border border-amber-500/30 text-amber-400'
+                                  : 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
+                              }`}
+                            >
+                              {pred.status === 'DUE_SOON' ? 'PRÓXIMO RECAMBIO' : 'ESTADO NORMAL'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-400">{pred.description}</p>
+                          <span className="text-[10px] text-slate-500 block italic">
+                            Fuente: {pred.officialSource}
+                          </span>
+                        </div>
+
+                        <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs font-mono text-slate-300">
+                          <div>
+                            <span className="text-[10px] text-slate-500 block">Objetivo</span>
+                            <span className="font-bold text-emerald-400">{pred.targetMileage.toLocaleString()} km</span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-[10px] text-slate-500 block">Fecha Estimada</span>
+                            <span>{pred.targetDate}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB 3: SPECS & DECLARED DATA */}
+            {activeTab === 'specs' && (
+              <div className="p-5 sm:p-6 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-sky-400" />
+                    <span>Ficha Técnica y Datos Declarados</span>
+                  </h3>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-400">
+                    {currentVehicle.isCustom ? 'Datos declarados por usuario' : 'Muestra homologada de prueba'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold">Marca y Modelo</span>
+                    <p className="text-sm font-semibold text-white mt-0.5">
+                      {currentVehicle.make} {currentVehicle.model}
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold">Año de Fabricación</span>
+                    <p className="text-sm font-semibold text-white mt-0.5">{currentVehicle.year}</p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold">Motorización</span>
+                    <p className="text-sm font-semibold text-white mt-0.5">
+                      {currentVehicle.engine || 'No informado'}
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold">Patente de Dominio</span>
+                    <p className="text-sm font-mono font-bold text-sky-400 mt-0.5">{currentVehicle.plate}</p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold">Identificador VIN</span>
+                    <p className="text-sm font-mono font-bold text-slate-300 mt-0.5">
+                      {currentVehicle.vin || 'No informado'}
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold">Tipo de Combustible</span>
+                    <p className="text-sm font-semibold text-white mt-0.5">
+                      {currentVehicle.fuelType || 'No informado'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 text-[11px] text-slate-400 leading-relaxed">
+                  <strong className="text-slate-300">Aclaración de integridad:</strong> Automotors Garage no sintetiza ni
+                  certifica un número de chasis (VIN) oficial si el titular o el registro oficial no lo proveyeron. Los
+                  campos no ingresados se indican explícitamente como &quot;No informado&quot;.
+                </div>
               </div>
             )}
           </div>
-        )}
-
-        {/* TAB 2: PREDICTIONS */}
-        {activeTab === 'predictions' && (
-          <div className="space-y-4">
-            <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 flex items-start gap-3 text-xs text-slate-300">
-              <Info className="h-4 w-4 text-emerald-400 flex-shrink-0 mt-0.5" />
-              <p>
-                <strong className="text-emerald-400">Descargo técnico obligatorio:</strong> Orientación técnica
-                preventiva. La decisión de recambio o reparación siempre debe validarse mediante inspección física en
-                taller calificado. Las estimaciones se fundan en datos oficiales por tiempo y kilometraje.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {vehiclePredictions.map((pred, i) => (
-                <div
-                  key={i}
-                  className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-2 flex flex-col justify-between"
-                >
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-white">{pred.category}</span>
-                      <span
-                        className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
-                          pred.status === 'DUE_SOON'
-                            ? 'bg-amber-500/10 border border-amber-500/30 text-amber-400'
-                            : 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
-                        }`}
-                      >
-                        {pred.status === 'DUE_SOON' ? 'PRÓXIMO RECAMBIO' : 'ESTADO NORMAL'}
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-400">{pred.description}</p>
-                  </div>
-
-                  <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs font-mono text-slate-300">
-                    <div>
-                      <span className="text-[10px] text-slate-500 block">Objetivo</span>
-                      <span>{pred.targetMileage.toLocaleString()} km</span>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-[10px] text-slate-500 block">Fecha Estimada</span>
-                      <span>{pred.targetDate}</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* TAB 3: SPECS */}
-        {activeTab === 'specs' && (
-          <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-4">
-            <h3 className="text-sm font-bold text-white">Ficha Técnica Oficial del Vehículo</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
-              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                <span className="text-[10px] text-slate-400 uppercase font-semibold">Marca y Modelo</span>
-                <p className="text-sm font-semibold text-white mt-0.5">{currentVehicle.make} {currentVehicle.model}</p>
-              </div>
-              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                <span className="text-[10px] text-slate-400 uppercase font-semibold">Año de Fabricación</span>
-                <p className="text-sm font-semibold text-white mt-0.5">{currentVehicle.year}</p>
-              </div>
-              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                <span className="text-[10px] text-slate-400 uppercase font-semibold">Motorización</span>
-                <p className="text-sm font-semibold text-white mt-0.5">{currentVehicle.engine}</p>
-              </div>
-              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                <span className="text-[10px] text-slate-400 uppercase font-semibold">Patente de Dominio</span>
-                <p className="text-sm font-mono font-bold text-sky-400 mt-0.5">{currentVehicle.plate}</p>
-              </div>
-              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                <span className="text-[10px] text-slate-400 uppercase font-semibold">Código VIN</span>
-                <p className="text-sm font-mono font-bold text-slate-300 mt-0.5">{currentVehicle.vin}</p>
-              </div>
-              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                <span className="text-[10px] text-slate-400 uppercase font-semibold">Tipo de Combustible</span>
-                <p className="text-sm font-semibold text-white mt-0.5">{currentVehicle.fuelType}</p>
-              </div>
-            </div>
-          </div>
-        )}
+        </div>
       </main>
 
       {/* ==================================================================== */}
@@ -639,6 +924,7 @@ export function DemoOwnerView() {
                     <option value="Neumáticos">Neumáticos</option>
                     <option value="Bujías">Bujías</option>
                     <option value="Refrigerante">Refrigerante</option>
+                    <option value="Mantenimiento General">Mantenimiento General</option>
                   </select>
                 </div>
 
@@ -686,9 +972,9 @@ export function DemoOwnerView() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold transition-colors"
+                  className="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold transition-colors shadow-sm"
                 >
-                  Guardar en Memoria Demo
+                  Guardar en Demostración
                 </button>
               </div>
             </form>
@@ -729,7 +1015,9 @@ export function DemoOwnerView() {
             <form onSubmit={handleAddVehicle} className="space-y-3.5 text-xs">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-300 font-semibold mb-1">Patente de Dominio</label>
+                  <label className="block text-slate-300 font-semibold mb-1">
+                    Patente de Dominio <span className="text-rose-400">*</span>
+                  </label>
                   <input
                     type="text"
                     value={newPlate}
@@ -741,11 +1029,15 @@ export function DemoOwnerView() {
                 </div>
 
                 <div>
-                  <label className="block text-slate-300 font-semibold mb-1">Año</label>
+                  <label className="block text-slate-300 font-semibold mb-1">
+                    Año de Fabricación <span className="text-rose-400">*</span>
+                  </label>
                   <input
                     type="number"
                     value={newYear}
                     onChange={(e) => setNewYear(e.target.value)}
+                    min="1900"
+                    max={new Date().getFullYear() + 1}
                     className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
                     required
                   />
@@ -754,7 +1046,9 @@ export function DemoOwnerView() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-300 font-semibold mb-1">Marca</label>
+                  <label className="block text-slate-300 font-semibold mb-1">
+                    Marca <span className="text-rose-400">*</span>
+                  </label>
                   <input
                     type="text"
                     value={newMake}
@@ -766,7 +1060,9 @@ export function DemoOwnerView() {
                 </div>
 
                 <div>
-                  <label className="block text-slate-300 font-semibold mb-1">Modelo</label>
+                  <label className="block text-slate-300 font-semibold mb-1">
+                    Modelo <span className="text-rose-400">*</span>
+                  </label>
                   <input
                     type="text"
                     value={newModel}
@@ -779,14 +1075,61 @@ export function DemoOwnerView() {
               </div>
 
               <div>
-                <label className="block text-slate-300 font-semibold mb-1">Kilometraje Inicial</label>
+                <label className="block text-slate-300 font-semibold mb-1">
+                  Kilometraje Inicial (Odómetro) <span className="text-rose-400">*</span>
+                </label>
                 <input
                   type="number"
                   value={newMileage}
                   onChange={(e) => setNewMileage(e.target.value)}
+                  min="0"
                   className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white font-mono focus:outline-none focus:ring-2 focus:ring-sky-500"
                   required
                 />
+              </div>
+
+              <div className="border-t border-slate-800/80 pt-3 space-y-3">
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                  Datos Técnicos Opcionales (pueden dejarse en blanco)
+                </span>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-400 font-semibold mb-1">Motorización</label>
+                    <input
+                      type="text"
+                      value={newEngine}
+                      onChange={(e) => setNewEngine(e.target.value)}
+                      placeholder="Ej. 1.6L 16v VTi (Opcional)"
+                      className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-400 font-semibold mb-1">Combustible</label>
+                    <input
+                      type="text"
+                      value={newFuelType}
+                      onChange={(e) => setNewFuelType(e.target.value)}
+                      placeholder="Ej. Nafta / Diésel / GNC (Opcional)"
+                      className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-slate-400 font-semibold mb-1">Número de Chasis (VIN)</label>
+                  <input
+                    type="text"
+                    value={newVin}
+                    onChange={(e) => setNewVin(e.target.value.toUpperCase())}
+                    placeholder="17 caracteres alfanuméricos (Opcional)"
+                    className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white font-mono uppercase focus:outline-none focus:ring-2 focus:ring-sky-500"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    Si no lo conocés, dejalo en blanco; se reflejará como &quot;No informado&quot; sin inventar códigos ficticios.
+                  </p>
+                </div>
               </div>
 
               <div className="pt-2 flex items-center justify-end gap-2.5">
@@ -799,9 +1142,9 @@ export function DemoOwnerView() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold transition-colors"
+                  className="px-4 py-2 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold transition-colors shadow-md"
                 >
-                  Crear Vehículo Demo
+                  Crear Vehículo
                 </button>
               </div>
             </form>

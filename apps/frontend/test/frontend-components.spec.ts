@@ -236,4 +236,60 @@ describe('Frontend Architecture & Components Test Suite', () => {
     assert.doesNotMatch(workshopContent, /fetch\(/i, 'Demo no debe invocar fetch hacia backend persistente');
     assert.doesNotMatch(workshopContent, /SUPER_ADMIN/i, 'Demo no debe contener privilegios SUPER_ADMIN');
   });
+
+  // ============================================================================
+  // Test 8: Milestone 16.1 — Persistencia Aislada y Experiencia Desktop
+  // ============================================================================
+  it('8. Demos interactivas garantizan persistencia local aislada, no duplicidad y diseño responsive (Milestone 16.1)', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    const resolveAppPath = (rel: string) => path.resolve(__dirname, '..', rel);
+
+    // 1. Invariantes DemoOwnerView (Mi Automotors)
+    const ownerViewPath = resolveAppPath('src/components/demo/DemoOwnerView.tsx');
+    const ownerContent = fs.readFileSync(ownerViewPath, 'utf8');
+
+    // Clave de almacenamiento local aislada
+    assert.match(ownerContent, /automotors_demo_owner_v1/);
+    assert.match(ownerContent, /localStorage\.getItem\(STORAGE_KEY\)/);
+    assert.match(ownerContent, /Restablecer demostración/i);
+    assert.match(ownerContent, /guardan únicamente en este navegador/i);
+
+    // Prevención de duplicados de patente
+    assert.match(ownerContent, /duplicate/i);
+    assert.match(ownerContent, /Ya existe un vehículo registrado con la patente/i);
+
+    // No sintetizar VINs falsos y tratar campos opcionales
+    assert.doesNotMatch(ownerContent, /DEMO\$\{Date\.now\(\)\}/, 'No debe sintetizar falsos números de chasis (VIN)');
+    assert.match(ownerContent, /No informado/i, 'Debe indicar "No informado" para datos técnicos no provistos');
+
+    // Estado vacío con acción clara
+    assert.match(ownerContent, /Sin mantenimientos registrados/i);
+    assert.match(ownerContent, /Registrar Primer Servicio/i);
+
+    // Ficha técnica y datos declarados (sin denominarla "Ficha Técnica Oficial")
+    assert.match(ownerContent, /Ficha Técnica y Datos Declarados/i);
+    assert.match(ownerContent, /No hay recomendaciones de mantenimiento verificadas disponibles para este vehículo/i);
+
+    // 2. Invariantes DemoWorkshopView (Automotors Pro)
+    const workshopViewPath = resolveAppPath('src/components/demo/DemoWorkshopView.tsx');
+    const workshopContent = fs.readFileSync(workshopViewPath, 'utf8');
+
+    // Clave de almacenamiento local aislada
+    assert.match(workshopContent, /automotors_demo_workshop_v1/);
+    assert.match(workshopContent, /localStorage\.getItem\(STORAGE_KEY\)/);
+    assert.match(workshopContent, /Restablecer demostración/i);
+    assert.match(workshopContent, /guardan únicamente en este navegador/i);
+
+    // Quick Service layout amplio y enlace a orden generada
+    assert.match(workshopContent, /Ver en Órdenes de Trabajo/i);
+    assert.match(workshopContent, /¡Servicio rápido registrado y certificado/i);
+    assert.match(workshopContent, /Confirmación Humana Técnica Obligatoria/i);
+
+    // Diagnóstico OBD-II con descargo explícito
+    assert.match(workshopContent, /no se conecta\s+f[ií]sicamente a una ECU vehicular/i);
+    assert.match(workshopContent, /SAE J2012/i);
+  });
 });
