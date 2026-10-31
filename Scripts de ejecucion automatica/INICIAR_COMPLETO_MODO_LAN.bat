@@ -34,7 +34,7 @@ if not exist "node_modules" (
 )
 
 rem 3. Invocar controlador unificado en modo LAN
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%automotors.ps1" -Action START-LAN
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%powershell\automotors.ps1" -Action START-LAN
 if %ERRORLEVEL% NEQ 0 (
     echo.
     echo =======================================================

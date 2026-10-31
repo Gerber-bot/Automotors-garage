@@ -35,21 +35,25 @@ Automotors Garage provides an integrated local Full Stack development environmen
 
 | Batch File | Target Service | Script Executed | Description |
 | :--- | :--- | :--- | :--- |
-| `INICIAR_COMPLETO.bat` | Full Stack | `automotors.ps1 -Action START` | Validates environment, launches backend (4000), checks `/health/ready`, launches Next.js (3000), and opens browser. |
-| `INICIAR_COMPLETO_MODO_LAN.bat` | Full Stack (LAN) | `automotors.ps1 -Action START-LAN` | Launches full stack bound to local Wi-Fi IP for testing on phones/tablets via same-origin Next.js proxy. |
-| `DETENER_AUTOMOTORS.bat` | Full Stack Stop | `automotors.ps1 -Action STOP` | Stops both frontend and backend processes cleanly and releases ports 3000 and 4000. |
+| `INICIAR_COMPLETO.bat` | Full Stack | `powershell/automotors.ps1 -Action START` | Validates environment, launches backend (4000), checks `/health/ready`, launches Next.js (3000), and opens browser. |
+| `INICIAR_COMPLETO_MODO_LAN.bat` | Full Stack (LAN) | `powershell/automotors.ps1 -Action START-LAN` | Launches full stack bound to local Wi-Fi IP for testing on phones/tablets via same-origin Next.js proxy. |
+| `DETENER_AUTOMOTORS.bat` | Full Stack Stop | `powershell/automotors.ps1 -Action STOP` | Stops both frontend and backend processes cleanly and releases ports 3000 and 4000. |
+| `COMPROBAR_ENTORNO.bat` | Environment Diagnostic | `powershell/automotors.ps1 -Action CHECK` | Non-destructive validation of Windows, Node.js, npm, dependencies, ports, and LAN connectivity. |
 
 ### PowerShell CLI Commands
 
 ```powershell
+# Check environment requirements
+powershell -ExecutionPolicy Bypass -File "Scripts de ejecucion automatica/powershell/automotors.ps1" -Action CHECK
+
 # Launch Full Stack (Default: Backend 4000 + Frontend 3000)
-powershell -ExecutionPolicy Bypass -File "Scripts de ejecucion automatica/automotors.ps1" -Action START
+powershell -ExecutionPolicy Bypass -File "Scripts de ejecucion automatica/powershell/automotors.ps1" -Action START
 
 # Launch Full Stack in LAN Mode (for mobile / tablet testing over Wi-Fi)
-powershell -ExecutionPolicy Bypass -File "Scripts de ejecucion automatica/automotors.ps1" -Action START-LAN
+powershell -ExecutionPolicy Bypass -File "Scripts de ejecucion automatica/powershell/automotors.ps1" -Action START-LAN
 
 # Stop Full Stack
-powershell -ExecutionPolicy Bypass -File "Scripts de ejecucion automatica/automotors.ps1" -Action STOP
+powershell -ExecutionPolicy Bypass -File "Scripts de ejecucion automatica/powershell/automotors.ps1" -Action STOP
 
 # Check Health & Readiness
 powershell -ExecutionPolicy Bypass -File "Scripts de ejecucion automatica/utilities/check-health.ps1" -Port 4000

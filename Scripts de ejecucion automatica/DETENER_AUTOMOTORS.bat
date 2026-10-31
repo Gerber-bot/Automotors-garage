@@ -11,7 +11,7 @@ echo  AUTOMOTORS GARAGE -- DETENCION DE SERVICIOS
 echo =======================================================
 echo.
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%automotors.ps1" -Action STOP
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%powershell\automotors.ps1" -Action STOP
 if %ERRORLEVEL% NEQ 0 (
     echo.
     echo [ADVERTENCIA] La detención reportó advertencias.

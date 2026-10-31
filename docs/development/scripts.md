@@ -11,7 +11,9 @@ Scripts de ejecucion automatica/
 ├── INICIAR_COMPLETO.bat           # One-click full-stack launcher (Backend + Frontend Next.js)
 ├── INICIAR_COMPLETO_MODO_LAN.bat  # Full-stack launcher bound to private LAN IPv4 for mobile testing
 ├── DETENER_AUTOMOTORS.bat         # Clean shutdown of both Next.js (3000) and API Backend (4000)
-├── automotors.ps1                 # Central PowerShell controller (Actions: START, START-LAN, STOP)
+├── COMPROBAR_ENTORNO.bat          # Non-destructive environment and dependencies diagnostic tool
+├── powershell/
+│   └── automotors.ps1             # Central PowerShell controller (Actions: START, START-LAN, STOP, CHECK)
 ├── database/
 │   ├── seed-demo.ps1              # PowerShell wrapper for seed generation
 │   ├── seed-demo.ts               # Demo data seeder for local development
@@ -32,6 +34,7 @@ Located inside `Scripts de ejecucion automatica/`:
 
 | Launcher | Mode | Function |
 | :--- | :--- | :--- |
+| `COMPROBAR_ENTORNO.bat` | Environment Diagnostic | Inspects OS, Node.js, npm, Git, directory structure, dependencies, ports, and LAN connectivity without making any changes. |
 | `INICIAR_COMPLETO.bat` | Standard Local | Validates Node.js & dependencies, checks environment, boots Backend (4000) with PGlite, waits for `/health/ready`, boots Next.js (3000) on `127.0.0.1`, and opens browser to `http://localhost:3000/`. |
 | `INICIAR_COMPLETO_MODO_LAN.bat` | LAN / Mobile | Identifies the physical active Wi-Fi/LAN IPv4, binds Next.js to `0.0.0.0`, forwards API calls via Next.js BFF proxy to `127.0.0.1:4000`, and displays mobile URLs (`http://<LAN_IP>:3000/demo/propietario`). |
 | `DETENER_AUTOMOTORS.bat` | Service Shutdown | Identifies running Frontend (3000) and Backend (4000) processes using PID files and TCP verification, safely terminates processes, removes stale PID files, and preserves `.data/` and `.logs/`. |
@@ -45,10 +48,10 @@ The root `package.json` maps developer commands to `Scripts de ejecucion automat
 ```json
 {
   "scripts": {
-    "dev": "powershell -ExecutionPolicy Bypass -File \"Scripts de ejecucion automatica/automotors.ps1\" -Action START",
-    "dev:lan": "powershell -ExecutionPolicy Bypass -File \"Scripts de ejecucion automatica/automotors.ps1\" -Action START-LAN",
-    "dev:stop": "powershell -ExecutionPolicy Bypass -File \"Scripts de ejecucion automatica/automotors.ps1\" -Action STOP",
-    "dev:check": "powershell -ExecutionPolicy Bypass -File \"Scripts de ejecucion automatica/utilities/check-env.ps1\"",
+    "dev": "powershell -ExecutionPolicy Bypass -File \"Scripts de ejecucion automatica/powershell/automotors.ps1\" -Action START",
+    "dev:lan": "powershell -ExecutionPolicy Bypass -File \"Scripts de ejecucion automatica/powershell/automotors.ps1\" -Action START-LAN",
+    "dev:stop": "powershell -ExecutionPolicy Bypass -File \"Scripts de ejecucion automatica/powershell/automotors.ps1\" -Action STOP",
+    "dev:check": "powershell -ExecutionPolicy Bypass -File \"Scripts de ejecucion automatica/powershell/automotors.ps1\" -Action CHECK",
     "dev:health": "powershell -ExecutionPolicy Bypass -File \"Scripts de ejecucion automatica/utilities/check-health.ps1\"",
     "seed:demo": "node --experimental-strip-types \"Scripts de ejecucion automatica/database/seed-demo.ts\"",
     "test": "node --experimental-strip-types --test ...",

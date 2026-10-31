@@ -6,7 +6,7 @@
     y detención segura de servicios (STOP). Maneja dependencias, diagnósticos de salud,
     concurrencia de procesos y persistencia PGlite.
 .PARAMETER Action
-    Operación a ejecutar: 'START', 'START-LAN' o 'STOP'.
+    Operación a ejecutar: 'START', 'START-LAN', 'STOP' o 'CHECK'.
 .PARAMETER BackendPort
     Puerto TCP del backend (por defecto: 4000).
 .PARAMETER FrontendPort
@@ -18,7 +18,7 @@
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet("START", "START-LAN", "STOP")]
+    [ValidateSet("START", "START-LAN", "STOP", "CHECK")]
     [string]$Action = "START",
     [int]$BackendPort = 4000,
     [int]$FrontendPort = 3000,
@@ -29,8 +29,8 @@ param(
 $ErrorActionPreference = "Stop"
 
 $scriptDir = $PSScriptRoot
-$repoRoot = (Resolve-Path (Join-Path $scriptDir "..")).Path
-$utilsPath = Join-Path $scriptDir "utilities/process-utils.ps1"
+$repoRoot = (Resolve-Path (Join-Path $scriptDir "../..")).Path
+$utilsPath = Join-Path $scriptDir "../utilities/process-utils.ps1"
 if (Test-Path $utilsPath) {
     . $utilsPath
 }
@@ -168,11 +168,12 @@ function Invoke-AutomotorsStart([bool]$isLanMode) {
 
     # 4. Validar requisitos del entorno
     Write-Host "[1/4] Verificando requisitos de ejecución..." -ForegroundColor Yellow
-    $checkEnvScript = Join-Path $scriptDir "utilities/check-env.ps1"
+    $checkEnvScript = Join-Path $scriptDir "../utilities/check-env.ps1"
     if (Test-Path $checkEnvScript) {
-        & powershell -NoProfile -ExecutionPolicy Bypass -File $checkEnvScript -Port $BackendPort
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $checkEnvScript -Port $BackendPort -FrontendPort $FrontendPort -Silent
         if ($LASTEXITCODE -ne 0) {
             Write-Host "  [FAIL] La comprobación de entorno detectó errores críticos." -ForegroundColor Red
+            Write-Host "         Ejecute COMPROBAR_ENTORNO.bat para ver el diagnóstico detallado y soluciones." -ForegroundColor Yellow
             exit 1
         }
     }
@@ -207,9 +208,9 @@ function Invoke-AutomotorsStart([bool]$isLanMode) {
 
     # 6. Esperar confirmación de salud del Backend (/health/ready)
     Write-Host "`n[3/4] Verificando salud y persistencia del Backend (/health/ready)..." -ForegroundColor Yellow
-    $deadline = (Get-Date).AddSeconds(15)
+    $deadline = (Get-Date).AddSeconds(25)
     $backendReady = $false
-    $checkHealthScript = Join-Path $scriptDir "utilities/check-health.ps1"
+    $checkHealthScript = Join-Path $scriptDir "../utilities/check-health.ps1"
 
     while ((Get-Date) -lt $deadline) {
         if (Test-Path $checkHealthScript) {
@@ -356,10 +357,25 @@ function Invoke-AutomotorsStart([bool]$isLanMode) {
 }
 
 # ==============================================================================
+# SUBRUTINA: COMPROBAR ENTORNO (CHECK)
+# ==============================================================================
+function Invoke-AutomotorsCheck {
+    $checkEnvScript = Join-Path $scriptDir "../utilities/check-env.ps1"
+    if (Test-Path $checkEnvScript) {
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $checkEnvScript -Port $BackendPort -FrontendPort $FrontendPort
+        exit $LASTEXITCODE
+    } else {
+        Write-Host "  [ERROR] No se encontró el verificador en: $checkEnvScript" -ForegroundColor Red
+        exit 1
+    }
+}
+
+# ==============================================================================
 # ENRUTADOR PRINCIPAL
 # ==============================================================================
 switch ($Action) {
     "START"     { Invoke-AutomotorsStart -isLanMode $false }
     "START-LAN" { Invoke-AutomotorsStart -isLanMode $true }
     "STOP"      { Invoke-AutomotorsStop }
+    "CHECK"     { Invoke-AutomotorsCheck }
 }

@@ -22,7 +22,7 @@ An earlier instance of Node.js or another service is already listening on port 4
 ### Resolution
 1. Run the safe stopping script to release the port:
    ```powershell
-   powershell -ExecutionPolicy Bypass -File "Scripts de ejecucion automatica/automotors.ps1" -Action STOP
+   powershell -ExecutionPolicy Bypass -File "Scripts de ejecucion automatica/powershell/automotors.ps1" -Action STOP
    ```
    Or via npm:
    ```bash
@@ -30,7 +30,7 @@ An earlier instance of Node.js or another service is already listening on port 4
    ```
 2. If another application occupies port 4000, specify an alternative port:
    ```powershell
-   powershell -ExecutionPolicy Bypass -File "Scripts de ejecucion automatica/automotors.ps1" -Action START -BackendPort 4001
+   powershell -ExecutionPolicy Bypass -File "Scripts de ejecucion automatica/powershell/automotors.ps1" -Action START -BackendPort 4001
    ```
 
 ---
