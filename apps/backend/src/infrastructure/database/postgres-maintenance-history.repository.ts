@@ -1,6 +1,6 @@
-import { eq, desc, inArray } from 'drizzle-orm';
+import { and, eq, desc, inArray, sql } from 'drizzle-orm';
 import type { DatabaseInstance } from '@automotors/database';
-import { maintenanceRecords, maintenanceCorrections } from '@automotors/database';
+import { maintenanceRecords, maintenanceCorrections, workOrders } from '@automotors/database';
 import {
   MaintenanceRecord,
   type MaintenanceRecordProps,
@@ -68,6 +68,28 @@ export class PostgresMaintenanceHistoryRepository implements IMaintenanceHistory
       .orderBy(desc(maintenanceRecords.serviceDate), desc(maintenanceRecords.recordedMileage));
 
     return rows.map((r: typeof maintenanceRecords.$inferSelect) => this.mapToDomain(r));
+  }
+
+  public async findByVehicleIdForWorkshop(
+    vehicleId: string,
+    workshopId: string
+  ): Promise<readonly MaintenanceRecord[]> {
+    const rows = await this.db
+      .select()
+      .from(maintenanceRecords)
+      .where(and(
+        eq(maintenanceRecords.vehicleId, vehicleId),
+        eq(maintenanceRecords.performingWorkshopId, workshopId),
+        sql`(${maintenanceRecords.workOrderId} IS NULL OR EXISTS (
+          SELECT 1 FROM ${workOrders}
+          WHERE ${workOrders.id} = ${maintenanceRecords.workOrderId}
+            AND ${workOrders.workshopId} = ${maintenanceRecords.performingWorkshopId}
+            AND ${workOrders.vehicleId} = ${maintenanceRecords.vehicleId}
+        ))`
+      ))
+      .orderBy(desc(maintenanceRecords.serviceDate), desc(maintenanceRecords.recordedMileage));
+
+    return rows.map((row) => this.mapToDomain(row));
   }
 
   public async save(record: MaintenanceRecord): Promise<void> {

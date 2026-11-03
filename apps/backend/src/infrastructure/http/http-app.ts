@@ -58,6 +58,8 @@ import { getDemoDashboardHtml } from './demo-web-ui.ts';
 import { ObdDiagnosticsService, ObdError, ObdSecurityError } from '@automotors/obd-core';
 import { TechnicalIdentificationEngine } from '../../modules/maintenance-intelligence/domain/technical-identification-engine.ts';
 
+const WORKSHOP_VEHICLE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export interface HttpAppDependencies {
   db: DatabaseInstance;
   jwtSecret?: string;
@@ -2095,12 +2097,18 @@ export class HttpApp {
       const workshopSummaryMatch = pathname.match(/^\/api\/v1\/vehicles\/([^/]+)\/history\/summary$/);
       if (workshopSummaryMatch && method === 'POST') {
         const vehicleId = workshopSummaryMatch[1]!;
+        if (!WORKSHOP_VEHICLE_UUID.test(vehicleId)) {
+          return this.sendJson(res, 404, { error: 'Resource not found.' }, requestId);
+        }
+        const records = await this.historyRepo.findByVehicleIdForWorkshop(vehicleId, tenantId);
+        if (records.length === 0) {
+          return this.sendJson(res, 404, { error: 'Resource not found.' }, requestId);
+        }
         const vehicle = await this.vehicleRepo.findById(vehicleId);
         if (!vehicle) {
-          return this.sendJson(res, 404, { error: 'Vehículo no encontrado.' }, requestId);
+          return this.sendJson(res, 404, { error: 'Resource not found.' }, requestId);
         }
 
-        const records = await this.historyRepo.findByVehicleId(vehicle.id);
         const mappedRecords = records.map((r) => ({
           id: r.id,
           serviceDate: r.serviceDate,
@@ -2135,13 +2143,19 @@ export class HttpApp {
       if (workshopExplainMatch && method === 'POST') {
         const vehicleId = workshopExplainMatch[1]!;
         const categoryParam = workshopExplainMatch[2]!;
+        if (!WORKSHOP_VEHICLE_UUID.test(vehicleId)) {
+          return this.sendJson(res, 404, { error: 'Resource not found.' }, requestId);
+        }
+        const records = await this.historyRepo.findByVehicleIdForWorkshop(vehicleId, tenantId);
+        if (records.length === 0) {
+          return this.sendJson(res, 404, { error: 'Resource not found.' }, requestId);
+        }
         const vehicle = await this.vehicleRepo.findById(vehicleId);
         if (!vehicle) {
-          return this.sendJson(res, 404, { error: 'Vehículo no encontrado.' }, requestId);
+          return this.sendJson(res, 404, { error: 'Resource not found.' }, requestId);
         }
 
         const normalizedCat = VehicleKnowledgeBase.normalizeCategory(categoryParam);
-        const records = await this.historyRepo.findByVehicleId(vehicle.id);
         const kbProfile = VehicleKnowledgeBase.findProfile({ make: vehicle.make, model: vehicle.model, year: vehicle.year });
         let rule = kbProfile?.intervals.find((r) => r.category === normalizedCat) ?? null;
 
