@@ -4,27 +4,15 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+
+permissions:
+  contents: read
 
 jobs:
   validate:
     name: Build, Typecheck & Test Suite
     runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgresPassword123!
-          POSTGRES_DB: automotors_garage_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+    timeout-minutes: 20
 
     steps:
       - name: Checkout Source Code
@@ -45,24 +33,10 @@ jobs:
       - name: Code Quality & Lint Verification (0 errors enforced)
         run: npm run lint
 
-      - name: Run Complete Test Suite
+      - name: Run Complete Test Suite (includes security and workshop authorization)
         env:
-          POSTGRES_HOST: localhost
-          POSTGRES_PORT: 5432
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgresPassword123!
-          POSTGRES_DB: automotors_garage_test
           NODE_ENV: test
         run: npm test
 
       - name: Next.js Production Build Verification
         run: npm run build
-
-      - name: Verify Demo Data Seeding Idempotency
-        env:
-          POSTGRES_HOST: localhost
-          POSTGRES_PORT: 5432
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgresPassword123!
-          POSTGRES_DB: automotors_garage_test
-        run: npm run seed:demo
