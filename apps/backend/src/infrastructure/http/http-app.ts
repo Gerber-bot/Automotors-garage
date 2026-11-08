@@ -20,7 +20,7 @@ import { PostgresVehicleRepository } from '../database/postgres-vehicle.reposito
 import { PostgresWorkOrderRepository } from '../database/postgres-work-order.repository.ts';
 import { PostgresCustomerRepository } from '../database/postgres-customer.repository.ts';
 import { PostgresMaintenanceHistoryRepository } from '../database/postgres-maintenance-history.repository.ts';
-import { PostgresUserRepository } from '../database/postgres-user.repository.ts';
+import { PostgresUserRepository, type UserWorkshopMembership } from '../database/postgres-user.repository.ts';
 import { PostgresUnitOfWork } from '../database/postgres-unit-of-work.ts';
 import { CreateVehicleUseCase } from '../../modules/vehicle/application/create-vehicle.usecase.ts';
 import { CreateWorkOrderUseCase } from '../../modules/work-order/application/create-work-order.usecase.ts';
@@ -57,6 +57,8 @@ import { DemoSeeder } from '../database/demo-seed.ts';
 import { getDemoDashboardHtml } from './demo-web-ui.ts';
 import { ObdDiagnosticsService, ObdError, ObdSecurityError } from '@automotors/obd-core';
 import { TechnicalIdentificationEngine } from '../../modules/maintenance-intelligence/domain/technical-identification-engine.ts';
+
+const WORKSHOP_VEHICLE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export interface HttpAppDependencies {
   db: DatabaseInstance;
@@ -344,6 +346,26 @@ export class HttpApp {
 
       // 3. Authentication Guard (with persisted session hydration)
       await this.authGuard.canActivateAsync(reqContext);
+
+      // A token selects an identity and workshop; only current server-side state grants access.
+      let currentMembership: UserWorkshopMembership | null = null;
+      if (reqContext.principal) {
+        const principal = reqContext.principal;
+        const session = await this.sessionService.assertActivePersisted(principal.sessionId);
+        if (session.userId !== principal.id) {
+          return this.sendJson(res, 403, { error: 'Access forbidden.' }, requestId);
+        }
+        const user = await this.userRepo.findById(principal.id);
+        if (!user?.isActive) {
+          return this.sendJson(res, 403, { error: 'Access forbidden.' }, requestId);
+        }
+        if (principal.activeTenantId) {
+          currentMembership = await this.userRepo.verifyMembership(principal.id, principal.activeTenantId);
+          if (!currentMembership) {
+            return this.sendJson(res, 403, { error: 'Access forbidden.' }, requestId);
+          }
+        }
+      }
 
       // 3b. AUTH: REGISTER VEHICLE OWNER (MI AUTOMOTORS)
       if (pathname === '/api/v1/auth/register' && method === 'POST') {
@@ -2049,9 +2071,15 @@ export class HttpApp {
 
       // MAINTENANCE: PREVENTIVE DUE
       if (pathname === '/api/v1/maintenance/calculate-preventive' && method === 'POST') {
+        if (!currentMembership?.permissions.includes('CALCULATE_PREVENTIVE')) {
+          return this.sendJson(res, 403, { error: 'Access forbidden.' }, requestId);
+        }
         const body = await this.parseBody(req);
         let vehicle = body.vehicle;
         if (!vehicle && body.vehicleId) {
+          if ((await this.historyRepo.findByVehicleIdForWorkshop(body.vehicleId, tenantId)).length === 0) {
+            return this.sendJson(res, 404, { error: 'Resource not found.' }, requestId);
+          }
           const v = await this.vehicleRepo.findById(body.vehicleId);
           vehicle = {
             id: body.vehicleId,
@@ -2094,13 +2122,22 @@ export class HttpApp {
       // WORKSHOP VEHICLE HISTORY SUMMARY
       const workshopSummaryMatch = pathname.match(/^\/api\/v1\/vehicles\/([^/]+)\/history\/summary$/);
       if (workshopSummaryMatch && method === 'POST') {
+        if (!currentMembership?.permissions.includes('READ')) {
+          return this.sendJson(res, 403, { error: 'Access forbidden.' }, requestId);
+        }
         const vehicleId = workshopSummaryMatch[1]!;
+        if (!WORKSHOP_VEHICLE_UUID.test(vehicleId)) {
+          return this.sendJson(res, 404, { error: 'Resource not found.' }, requestId);
+        }
+        const records = await this.historyRepo.findByVehicleIdForWorkshop(vehicleId, tenantId);
+        if (records.length === 0) {
+          return this.sendJson(res, 404, { error: 'Resource not found.' }, requestId);
+        }
         const vehicle = await this.vehicleRepo.findById(vehicleId);
         if (!vehicle) {
-          return this.sendJson(res, 404, { error: 'Vehículo no encontrado.' }, requestId);
+          return this.sendJson(res, 404, { error: 'Resource not found.' }, requestId);
         }
 
-        const records = await this.historyRepo.findByVehicleId(vehicle.id);
         const mappedRecords = records.map((r) => ({
           id: r.id,
           serviceDate: r.serviceDate,
@@ -2133,15 +2170,24 @@ export class HttpApp {
       // WORKSHOP PREDICTION EXPLAIN
       const workshopExplainMatch = pathname.match(/^\/api\/v1\/vehicles\/([^/]+)\/predictions\/([^/]+)\/explain$/);
       if (workshopExplainMatch && method === 'POST') {
+        if (!currentMembership?.permissions.includes('CALCULATE_PREVENTIVE')) {
+          return this.sendJson(res, 403, { error: 'Access forbidden.' }, requestId);
+        }
         const vehicleId = workshopExplainMatch[1]!;
         const categoryParam = workshopExplainMatch[2]!;
+        if (!WORKSHOP_VEHICLE_UUID.test(vehicleId)) {
+          return this.sendJson(res, 404, { error: 'Resource not found.' }, requestId);
+        }
+        const records = await this.historyRepo.findByVehicleIdForWorkshop(vehicleId, tenantId);
+        if (records.length === 0) {
+          return this.sendJson(res, 404, { error: 'Resource not found.' }, requestId);
+        }
         const vehicle = await this.vehicleRepo.findById(vehicleId);
         if (!vehicle) {
-          return this.sendJson(res, 404, { error: 'Vehículo no encontrado.' }, requestId);
+          return this.sendJson(res, 404, { error: 'Resource not found.' }, requestId);
         }
 
         const normalizedCat = VehicleKnowledgeBase.normalizeCategory(categoryParam);
-        const records = await this.historyRepo.findByVehicleId(vehicle.id);
         const kbProfile = VehicleKnowledgeBase.findProfile({ make: vehicle.make, model: vehicle.model, year: vehicle.year });
         let rule = kbProfile?.intervals.find((r) => r.category === normalizedCat) ?? null;
 

@@ -155,17 +155,26 @@ export class PostgresUserRepository {
     }
   }
 
+  private effectivePermissions(role: string, overrides: string[] | null): string[] {
+    const allowed = this.getPermissionsForRole(role);
+    return overrides === null ? allowed : allowed.filter((permission) => overrides.includes(permission));
+  }
+
   public async getUserMemberships(userId: string): Promise<UserWorkshopMembership[]> {
     const rows = await (this.db as any)
       .select({
         workshopId: workshopMembers.workshopId,
         workshopName: workshops.name,
         role: workshopMembers.role,
-        isActive: workshopMembers.isActive,
+        permissions: workshopMembers.permissions,
       })
       .from(workshopMembers)
       .innerJoin(workshops, eq(workshopMembers.workshopId, workshops.id))
-      .where(and(eq(workshopMembers.userId, userId), eq(workshopMembers.isActive, true)));
+      .where(and(
+        eq(workshopMembers.userId, userId),
+        eq(workshopMembers.isActive, true),
+        eq(workshops.isActive, true)
+      ));
 
     return rows.map((r: any) => {
       const safeRole = this.sanitizeWorkshopRole(r.role);
@@ -173,7 +182,7 @@ export class PostgresUserRepository {
         workshopId: r.workshopId,
         workshopName: r.workshopName,
         role: safeRole,
-        permissions: this.getPermissionsForRole(safeRole),
+        permissions: this.effectivePermissions(safeRole, r.permissions),
       };
     });
   }
@@ -184,6 +193,7 @@ export class PostgresUserRepository {
         workshopId: workshopMembers.workshopId,
         workshopName: workshops.name,
         role: workshopMembers.role,
+        permissions: workshopMembers.permissions,
       })
       .from(workshopMembers)
       .innerJoin(workshops, eq(workshopMembers.workshopId, workshops.id))
@@ -191,7 +201,8 @@ export class PostgresUserRepository {
         and(
           eq(workshopMembers.userId, userId),
           eq(workshopMembers.workshopId, workshopId),
-          eq(workshopMembers.isActive, true)
+          eq(workshopMembers.isActive, true),
+          eq(workshops.isActive, true)
         )
       )
       .limit(1);
@@ -202,7 +213,7 @@ export class PostgresUserRepository {
       workshopId: rows[0].workshopId,
       workshopName: rows[0].workshopName,
       role: safeRole,
-      permissions: this.getPermissionsForRole(safeRole),
+      permissions: this.effectivePermissions(safeRole, rows[0].permissions),
     };
   }
 }

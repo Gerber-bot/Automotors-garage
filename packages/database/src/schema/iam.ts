@@ -58,6 +58,7 @@ export const workshopMembers = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     role: varchar('role', { length: 50 }).notNull(), // SUPER_ADMIN, WORKSHOP_OWNER, WORKSHOP_MANAGER, MECHANIC, VEHICLE_OWNER
+    permissions: text('permissions').array(),
     isActive: boolean('is_active').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
