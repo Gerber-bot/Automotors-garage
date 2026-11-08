@@ -64,3 +64,11 @@ Granular permissions follow the format: `<resource>:<action>` (e.g., `workorder:
 - **XSS & Content Security**: Strict input validation using Zod; HTML entity escaping; strict Content Security Policy (CSP) headers enabled via Helmet.
 - **Rate Limiting**: Redis-backed token bucket rate limiters protecting authentication endpoints (`/auth/login`, `/auth/refresh`, `/auth/forgot-password`).
 - **Audit Logging**: Sensitive operations (role changes, price modifications, record deletions, passport sharing) emit structured audit records with IP and user metadata.
+
+## 6. HTTP Input and Database Configuration Limits
+
+- JSON request bodies are limited to **1 MiB** while streaming. Larger requests receive `413 Payload Too Large` with `Connection: close`; reads are paused, the response is flushed, and the rejected socket is closed. A 1-second teardown deadline handles clients that do not read the response. Rejected bodies are not drained indefinitely or reused for another request.
+- Body reading has a **5-second idle timeout** and a **30-second absolute deadline**, returning `408 Request Timeout` and closing the connection. Body timers/listeners are removed on completion, error, abort, or rejection. Valid requests retain normal keep-alive behavior. These limits begin when JSON parsing starts; they are not a replacement for edge header/rate/connection limits.
+- Invalid JSON receives `400 Bad Request`. Complete legitimate bodies, including exactly 1 MiB, remain accepted; clients must finish uploads within the documented deadlines.
+- Production PostgreSQL must be configured with `DATABASE_URL` or explicit host, user, password, and database settings. The legacy `postgres`/`postgres` defaults are retained only for non-production local development.
+- Production URLs require `postgres:`/`postgresql:`, a valid DNS/IP host, and nonblank explicit user, password, and database. Malformed percent escapes and URL query overrides of connection identity are rejected. Errors do not include URLs or credentials. Local URLs without credentials remain supported outside production.
