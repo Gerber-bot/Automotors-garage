@@ -60,6 +60,16 @@ import { TechnicalIdentificationEngine } from '../../modules/maintenance-intelli
 
 const WORKSHOP_VEHICLE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** Maximum accepted JSON request body: 1 MiB. */
+export const MAX_REQUEST_BODY_BYTES = 1024 * 1024;
+export const REQUEST_BODY_IDLE_TIMEOUT_MS = 5_000;
+export const REQUEST_BODY_TIMEOUT_MS = 30_000;
+export const REJECTED_CONNECTION_TIMEOUT_MS = 1_000;
+
+class PayloadTooLargeError extends Error {}
+class RequestBodyTimeoutError extends Error {}
+class InvalidJsonPayloadError extends Error {}
+
 export interface HttpAppDependencies {
   db: DatabaseInstance;
   jwtSecret?: string;
@@ -212,18 +222,90 @@ export class HttpApp {
 
   private async parseBody(req: IncomingMessage): Promise<Record<string, any>> {
     return new Promise((resolve, reject) => {
-      let body = '';
-      req.on('data', (chunk) => (body += chunk));
-      req.on('end', () => {
+      const chunks: Buffer[] = [];
+      let receivedBytes = 0;
+      let settled = false;
+
+      const cleanup = () => {
+        clearTimeout(deadline);
+        clearTimeout(idleTimer);
+        req.removeListener('data', onData);
+        req.removeListener('end', onEnd);
+        req.removeListener('error', onError);
+        req.removeListener('aborted', onAborted);
+      };
+      const rejectBody = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        chunks.length = 0;
+        cleanup();
+        req.pause();
+        reject(error);
+      };
+      const onTimeout = () => rejectBody(new RequestBodyTimeoutError('Request body timed out.'));
+      const deadline = setTimeout(onTimeout, REQUEST_BODY_TIMEOUT_MS);
+      let idleTimer = setTimeout(onTimeout, REQUEST_BODY_IDLE_TIMEOUT_MS);
+
+      const onData = (chunk: Buffer | string) => {
+        clearTimeout(idleTimer);
+        idleTimer = setTimeout(onTimeout, REQUEST_BODY_IDLE_TIMEOUT_MS);
+        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        receivedBytes += buffer.length;
+        if (receivedBytes > MAX_REQUEST_BODY_BYTES) {
+          rejectBody(new PayloadTooLargeError('Request body exceeds the 1 MiB limit.'));
+          return;
+        }
+        chunks.push(buffer);
+      };
+
+      const onEnd = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        const body = Buffer.concat(chunks, receivedBytes).toString('utf8');
+        chunks.length = 0;
         if (!body || body.trim().length === 0) return resolve({});
         try {
           resolve(JSON.parse(body));
         } catch {
-          reject(new Error('Invalid JSON payload.'));
+          reject(new InvalidJsonPayloadError('Invalid JSON payload.'));
         }
-      });
-      req.on('error', reject);
+      };
+      const onError = (error: Error) => rejectBody(error);
+      const onAborted = () => {
+        rejectBody(new Error('Request was aborted.'));
+        // IncomingMessage emits ECONNRESET after 'aborted'; keep it handled.
+        req.once('error', () => {});
+      };
+      req.on('data', onData);
+      req.once('end', onEnd);
+      req.once('error', onError);
+      req.once('aborted', onAborted);
+
+      const contentLength = req.headers['content-length'];
+      if (typeof contentLength === 'string' && /^\d+$/.test(contentLength) && Number(contentLength) > MAX_REQUEST_BODY_BYTES) {
+        rejectBody(new PayloadTooLargeError('Request body exceeds the 1 MiB limit.'));
+      }
     });
+  }
+
+  private rejectBodyAndClose(req: IncomingMessage, res: ServerResponse, status: number, message: string, requestId: string): void {
+    const socket = req.socket;
+    req.pause();
+    // Never reuse a connection with an unread rejected body. Flush the HTTP error
+    // before closing; force teardown if a client does not read the response.
+    res.shouldKeepAlive = false;
+    res.setHeader('Connection', 'close');
+    const onError = () => socket.destroy();
+    req.on('error', onError);
+    const deadline = setTimeout(() => socket.destroy(), REJECTED_CONNECTION_TIMEOUT_MS);
+    deadline.unref();
+    socket.once('close', () => {
+      clearTimeout(deadline);
+      req.removeListener('error', onError);
+    });
+    res.once('finish', () => socket.destroySoon());
+    this.sendJson(res, status, { error: message }, requestId);
   }
 
   private log(level: 'INFO' | 'WARN' | 'ERROR', message: string, metadata: Record<string, unknown> = {}): void {
@@ -1783,15 +1865,25 @@ export class HttpApp {
         );
       }
       const tenantId = reqContext.principal.activeTenantId;
+      const hasWorkshopPermission = (permission: string): boolean =>
+        currentMembership?.permissions.includes(permission) === true;
+      const hasAllWorkshopPermissions = (...permissions: string[]): boolean =>
+        permissions.every(hasWorkshopPermission);
 
       // WORKSHOPS: LIST USER AUTHORIZED WORKSHOPS
       if (pathname === '/api/v1/workshops' && method === 'GET') {
+        if (!hasWorkshopPermission('READ')) {
+          return this.sendJson(res, 403, { error: 'Access forbidden.' }, requestId);
+        }
         const memberships = await this.userRepo.getUserMemberships(reqContext.principal.id);
         return this.sendJson(res, 200, memberships, requestId);
       }
 
       // VEHICLES: CREATE
       if (pathname === '/api/v1/vehicles' && method === 'POST') {
+        if (!hasWorkshopPermission('CREATE')) {
+          return this.sendJson(res, 403, { error: 'Access forbidden.' }, requestId);
+        }
         const body = await this.parseBody(req);
         const result = await this.createVehicleUseCase.execute(body as any);
         if (result.isFailure) {
@@ -1803,6 +1895,9 @@ export class HttpApp {
 
       // VEHICLES: SEARCH OR LIST
       if (pathname === '/api/v1/vehicles' && method === 'GET') {
+        if (!hasWorkshopPermission('READ')) {
+          return this.sendJson(res, 403, { error: 'Access forbidden.' }, requestId);
+        }
         const plate = parsedUrl.searchParams.get('plate') ?? undefined;
         const vin = parsedUrl.searchParams.get('vin') ?? undefined;
         const q = parsedUrl.searchParams.get('q') ?? undefined;
@@ -1840,6 +1935,9 @@ export class HttpApp {
       // VEHICLES: DETAIL
       const vehicleDetailMatch = pathname.match(/^\/api\/v1\/vehicles\/([^/]+)$/);
       if (vehicleDetailMatch && method === 'GET') {
+        if (!hasWorkshopPermission('READ')) {
+          return this.sendJson(res, 403, { error: 'Access forbidden.' }, requestId);
+        }
         const vehicleId = vehicleDetailMatch[1]!;
         const vehicle = await this.vehicleRepo.findById(vehicleId);
         if (!vehicle) {
@@ -1876,6 +1974,9 @@ export class HttpApp {
       // WORKSHOP VEHICLE CONFIGURATION BINDING
       const workshopConfigBindMatch = pathname.match(/^\/api\/v1\/vehicles\/([^/]+)\/configuration$/);
       if (workshopConfigBindMatch && method === 'POST') {
+        if (!hasWorkshopPermission('UPDATE')) {
+          return this.sendJson(res, 403, { error: 'Access forbidden.' }, requestId);
+        }
         const vehicleId = workshopConfigBindMatch[1]!;
         const vehicle = await this.vehicleRepo.findById(vehicleId);
         if (!vehicle) {
@@ -1922,6 +2023,9 @@ export class HttpApp {
 
       // CUSTOMERS: LIST
       if (pathname === '/api/v1/customers' && method === 'GET') {
+        if (!hasWorkshopPermission('READ')) {
+          return this.sendJson(res, 403, { error: 'Access forbidden.' }, requestId);
+        }
         const customers = await this.customerRepo.listByTenant(tenantId);
         return this.sendJson(
           res,
@@ -1939,6 +2043,9 @@ export class HttpApp {
 
       // CUSTOMERS: CREATE
       if (pathname === '/api/v1/customers' && method === 'POST') {
+        if (!hasWorkshopPermission('CREATE')) {
+          return this.sendJson(res, 403, { error: 'Access forbidden.' }, requestId);
+        }
         const body = await this.parseBody(req);
         const { Customer } = await import('../../modules/customer/domain/customer.ts');
         const cResult = Customer.create({
@@ -1958,6 +2065,9 @@ export class HttpApp {
 
       // WORK ORDERS: LIST
       if (pathname === '/api/v1/work-orders' && method === 'GET') {
+        if (!hasWorkshopPermission('READ')) {
+          return this.sendJson(res, 403, { error: 'Access forbidden.' }, requestId);
+        }
         const statusFilter = parsedUrl.searchParams.get('status') ?? undefined;
         const vehicleId = parsedUrl.searchParams.get('vehicleId') ?? undefined;
         const orders = await this.workOrderRepo.search({
@@ -1987,6 +2097,9 @@ export class HttpApp {
 
       // WORK ORDERS: CREATE
       if (pathname === '/api/v1/work-orders' && method === 'POST') {
+        if (!hasWorkshopPermission('CREATE')) {
+          return this.sendJson(res, 403, { error: 'Access forbidden.' }, requestId);
+        }
         const body = await this.parseBody(req);
         if (body.vehicleId) {
           const targetVehicle = await this.vehicleRepo.findById(body.vehicleId);
@@ -2018,6 +2131,9 @@ export class HttpApp {
 
       // WORK ORDERS: QUICK SERVICE (STAR FEATURE)
       if (pathname === '/api/v1/work-orders/quick-service' && method === 'POST') {
+        if (!hasAllWorkshopPermissions('CREATE', 'CLOSE_ORDER')) {
+          return this.sendJson(res, 403, { error: 'Access forbidden.' }, requestId);
+        }
         const body = await this.parseBody(req);
         if (body.vehicleId) {
           const targetVehicle = await this.vehicleRepo.findById(body.vehicleId);
@@ -2050,6 +2166,9 @@ export class HttpApp {
       // WORK ORDERS: CLOSE
       const closeMatch = pathname.match(/^\/api\/v1\/work-orders\/([^/]+)\/close$/);
       if (closeMatch && method === 'POST') {
+        if (!hasWorkshopPermission('CLOSE_ORDER')) {
+          return this.sendJson(res, 403, { error: 'Access forbidden.' }, requestId);
+        }
         const workOrderId = closeMatch[1]!;
         const body = await this.parseBody(req);
         const result = await this.closeWorkOrderUseCase.execute({
@@ -2276,6 +2395,9 @@ export class HttpApp {
 
       // AI: OBD2 INTERPRETATION
       if (pathname === '/api/v1/ai/obd2/interpret' && method === 'POST') {
+        if (!hasWorkshopPermission('CALCULATE_PREVENTIVE')) {
+          return this.sendJson(res, 403, { error: 'Access forbidden.' }, requestId);
+        }
         const body = await this.parseBody(req);
         const result = await this.obd2UseCase.execute(body as any);
         if (result.isFailure) {
@@ -2286,12 +2408,18 @@ export class HttpApp {
 
       // DIAGNOSTICS: ENUMERATE USB SERIAL PORTS
       if (pathname === '/api/v1/diagnostics/ports' && method === 'GET') {
+        if (!hasWorkshopPermission('READ')) {
+          return this.sendJson(res, 403, { error: 'Access forbidden.' }, requestId);
+        }
         const ports = await this.obdService.getAvailablePorts();
         return this.sendJson(res, 200, { ports }, requestId);
       }
 
       // DIAGNOSTICS: START SESSION
       if (pathname === '/api/v1/diagnostics/session/start' && method === 'POST') {
+        if (!hasWorkshopPermission('UPDATE')) {
+          return this.sendJson(res, 403, { error: 'Access forbidden.' }, requestId);
+        }
         const body = await this.parseBody(req);
         if (!body.vehicleId) {
           return this.sendJson(res, 400, { error: 'vehicleId is required' }, requestId);
@@ -2350,6 +2478,9 @@ export class HttpApp {
 
       // DIAGNOSTICS: POLL LIVE SNAPSHOT
       if (pathname === '/api/v1/diagnostics/session/live' && method === 'GET') {
+        if (!hasWorkshopPermission('READ')) {
+          return this.sendJson(res, 403, { error: 'Access forbidden.' }, requestId);
+        }
         const vehicleId = parsedUrl.searchParams.get('vehicleId');
         if (!vehicleId) {
           return this.sendJson(res, 400, { error: 'vehicleId query parameter is required' }, requestId);
@@ -2360,6 +2491,9 @@ export class HttpApp {
 
       // DIAGNOSTICS: STOP SESSION
       if (pathname === '/api/v1/diagnostics/session/stop' && method === 'POST') {
+        if (!hasWorkshopPermission('UPDATE')) {
+          return this.sendJson(res, 403, { error: 'Access forbidden.' }, requestId);
+        }
         const body = await this.parseBody(req);
         if (!body.vehicleId) {
           return this.sendJson(res, 400, { error: 'vehicleId is required' }, requestId);
@@ -2370,6 +2504,9 @@ export class HttpApp {
 
       // DIAGNOSTICS: SAVE SNAPSHOT TO VEHICLE HISTORY
       if (pathname === '/api/v1/diagnostics/session/snapshot' && method === 'POST') {
+        if (!hasWorkshopPermission('CREATE')) {
+          return this.sendJson(res, 403, { error: 'Access forbidden.' }, requestId);
+        }
         const body = await this.parseBody(req);
         if (!body.vehicleId || !body.telemetry) {
           return this.sendJson(res, 400, { error: 'vehicleId and telemetry snapshot are required' }, requestId);
@@ -2407,6 +2544,15 @@ export class HttpApp {
       // Route Not Found
       return this.sendJson(res, 404, { error: `Route '${method} ${pathname}' not found.` }, requestId);
     } catch (err: unknown) {
+      if (err instanceof PayloadTooLargeError) {
+        return this.rejectBodyAndClose(req, res, 413, err.message, requestId);
+      }
+      if (err instanceof RequestBodyTimeoutError) {
+        return this.rejectBodyAndClose(req, res, 408, err.message, requestId);
+      }
+      if (err instanceof InvalidJsonPayloadError) {
+        return this.sendJson(res, 400, { error: err.message }, requestId);
+      }
       if (err instanceof AuthenticationRequiredError || err instanceof TokenExpiredOrInvalidError) {
         return this.sendJson(res, 401, { error: 'Authentication required. Missing or invalid token.' }, requestId);
       }

@@ -54,6 +54,50 @@ Automotors Garage defines five primary hierarchical roles with strict multi-tena
 - `workorder:update` for `MECHANIC`: allowed while status is open/in-progress; strictly rejected if `CLOSED` or `COMPLETED`.
 - `workorder:approve` for `VEHICLE_OWNER`: allows approving or declining proposed estimates on their own vehicle.
 
+## Enforced Workshop HTTP Permissions
+
+The current HTTP adapter uses the persisted workshop permission keys `READ`, `CREATE`, `UPDATE`, `CLOSE_ORDER`, and `CALCULATE_PREVENTIVE`. Membership, role, and permission overrides are reloaded from the database for each request; an override can only reduce the permissions granted by the role.
+
+| Route | Method | Operation | Required permission |
+| :--- | :---: | :--- | :--- |
+| `/api/v1/workshops` | GET | List memberships | `READ` |
+| `/api/v1/vehicles` | GET | Search/list vehicles | `READ` |
+| `/api/v1/vehicles/:id` | GET | Read workshop vehicle | `READ` |
+| `/api/v1/vehicles` | POST | Create vehicle | `CREATE` |
+| `/api/v1/vehicles/:id/configuration` | POST | Bind technical configuration | `UPDATE` |
+| `/api/v1/customers` | GET | List customers | `READ` |
+| `/api/v1/customers` | POST | Create customer | `CREATE` |
+| `/api/v1/work-orders` | GET | List work orders | `READ` |
+| `/api/v1/work-orders` | POST | Create work order | `CREATE` |
+| `/api/v1/work-orders/quick-service` | POST | Create and close quick service | `CREATE` and `CLOSE_ORDER` |
+| `/api/v1/work-orders/:id/close` | POST | Close work order | `CLOSE_ORDER` |
+| `/api/v1/maintenance/calculate-preventive` | POST | Calculate due maintenance | `CALCULATE_PREVENTIVE` |
+| `/api/v1/vehicles/:id/history/summary` | POST | Summarize workshop-scoped history | `READ` |
+| `/api/v1/vehicles/:id/predictions/:category/explain` | POST | Explain deterministic prediction | `CALCULATE_PREVENTIVE` |
+| `/api/v1/ai/obd2/interpret` | POST | Interpret OBD-II data | `CALCULATE_PREVENTIVE` |
+| `/api/v1/diagnostics/ports` | GET | Enumerate diagnostic ports | `READ` |
+| `/api/v1/diagnostics/session/live` | GET | Read live diagnostic data | `READ` |
+| `/api/v1/diagnostics/session/start` | POST | Start workshop diagnostic session | `UPDATE` |
+| `/api/v1/diagnostics/session/stop` | POST | Stop workshop diagnostic session | `UPDATE` |
+| `/api/v1/diagnostics/session/snapshot` | POST | Save diagnostic snapshot | `CREATE` |
+
+The `VIEWER`, `RECEPTIONIST`, and `MANAGER` role identifiers currently receive `READ` only from the HTTP permission mapping; role overrides cannot elevate them. Vehicle-owner routes remain separately scoped to the authenticated owner, and platform `SUPER_ADMIN` operations remain restricted to the existing explicit platform checks.
+
+### Role vocabulary mismatch: expansion requires a product decision
+
+| Identifier | Shared domain / frontend Role contract | Membership adapter today | Effective HTTP policy |
+| :--- | :--- | :--- | :--- |
+| `WORKSHOP_MANAGER` | Declared; resource-specific manager permissions in security-foundation | Not allowlisted; sanitized to `VIEWER` | `READ` only |
+| `MANAGER` | Not declared | Allowlisted legacy identifier | `READ` only |
+| `RECEPTIONIST` | Not declared | Allowlisted legacy identifier | `READ` only |
+| `VIEWER` | Not declared | Allowlisted fallback | `READ` only |
+| `ADMIN` | Not declared | Allowlisted legacy administrator | All six existing workshop permissions |
+| `WORKSHOP_OWNER` | Declared | Allowlisted | All six existing workshop permissions |
+
+The membership schema stores a free-form varchar, not an enum. Similar names are **not aliases**. The resource-specific `WORKSHOP_MANAGER` policy does not define how to map to the HTTP adapter's coarse keys (in particular `UPDATE`, `CLOSE_ORDER`, and `CALCULATE_PREVENTIVE`). No such mapping or privilege expansion is introduced here. Product approval must specify canonical role names, migration of legacy values, and allowed operations before widening access. The earlier general resource matrix describes security-foundation, not the effective HTTP adapter policy above.
+
+`tests/integration/workshop-history-access.spec.ts` verifies read/write behavior for all six identifiers, including elevated override attempts and role changes using the same token. Existing tests continue to verify membership revocation and workshop isolation.
+
 ---
 
 ## Attribute-Based Access Control (ABAC) Invariants
