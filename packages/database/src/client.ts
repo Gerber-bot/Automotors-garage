@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { drizzle as drizzleNodePg } from 'drizzle-orm/node-postgres';
 import { drizzle as drizzlePglite } from 'drizzle-orm/pglite';
 import pg from 'pg';
@@ -25,6 +26,54 @@ export const DatabaseConfigSchema = z.object({
 export type DatabaseConfig = z.infer<typeof DatabaseConfigSchema>;
 
 export type DatabaseInstance = ReturnType<typeof drizzleNodePg<typeof schema>> | ReturnType<typeof drizzlePglite<typeof schema>>;
+
+/** Confine persistent development data to this installation, even when overridden by the environment. */
+export function resolveLocalPgliteDir(dataDir: string, root: string = process.cwd()): string {
+  const dataRoot = path.resolve(root, '.data');
+  const candidate = path.resolve(root, dataDir);
+  const relative = path.relative(dataRoot, candidate);
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error('PG_DATA_DIR must be a directory inside this installation\'s .data');
+  }
+  let current = dataRoot;
+  for (const segment of relative.split(path.sep)) {
+    if (fs.existsSync(current) && fs.lstatSync(current).isSymbolicLink()) {
+      throw new Error(`PGlite storage cannot traverse a linked directory: ${current}`);
+    }
+    current = path.join(current, segment);
+  }
+  if (fs.existsSync(current) && fs.lstatSync(current).isSymbolicLink()) {
+    throw new Error(`PGlite storage cannot traverse a linked directory: ${current}`);
+  }
+  return candidate;
+}
+
+/** Atomic cross-process claim. Never infer that a leftover claim is safe to remove. */
+function claimPgliteDirectory(dataDir: string) {
+  fs.mkdirSync(dataDir, { recursive: true });
+  const file = path.join(dataDir, '.automotors.lock');
+  const token = randomUUID();
+  let descriptor: number | undefined;
+  try {
+    descriptor = fs.openSync(file, 'wx', 0o600);
+  } catch {
+    throw new Error(`[CRITICAL_DATA_PROTECTION] PGlite directory is already claimed or requires manual review: '${dataDir}'. No database was opened.`);
+  }
+  const preserve = () => {
+    if (descriptor !== undefined) { fs.closeSync(descriptor); descriptor = undefined; }
+  };
+  try { fs.writeFileSync(descriptor, JSON.stringify({ pid: process.pid, token }), 'utf8'); }
+  catch (error) { preserve(); throw error; }
+  return {
+    preserve,
+    release: () => {
+      preserve();
+      const current = JSON.parse(fs.readFileSync(file, 'utf8')) as { token?: string };
+      if (current.token !== token) throw new Error('PGlite claim changed; preserve it for manual review');
+      fs.unlinkSync(file);
+    },
+  };
+}
 
 export class DatabaseFactory {
   public static createPool(rawConfig: Partial<DatabaseConfig> = {}): pg.Pool {
@@ -111,16 +160,19 @@ export class DatabaseFactory {
   }
 
   public static async createInMemoryTestDb(dataDir?: string) {
+    let claim: ReturnType<typeof claimPgliteDirectory> | undefined;
     if (dataDir) {
       const parent = path.dirname(dataDir);
       if (parent && !fs.existsSync(parent)) {
         fs.mkdirSync(parent, { recursive: true });
       }
 
+      claim = claimPgliteDirectory(dataDir);
       const lockFile = path.join(dataDir, 'postmaster.pid');
-      const ownerFile = path.join(dataDir, '.owner.pid');
 
       if (fs.existsSync(lockFile)) {
+        // This invocation has not initialized PGlite, so release only its own claim.
+        claim.release();
         const check = DatabaseFactory.isProcessUsingDatabase(dataDir);
         if (check.isUsing && check.pid) {
           const errMsg = `[CRITICAL_DATA_PROTECTION] An active process (PID ${check.pid}) is currently accessing the database at '${dataDir}' (${check.reason}). Halting operation to prevent concurrent writes and data corruption.`;
@@ -128,17 +180,7 @@ export class DatabaseFactory {
           throw new Error(errMsg);
         }
 
-        // Reliably confirmed no active process exists
-        console.warn(`[DATA_PROTECTION] Verified no active process is accessing '${dataDir}'. Safely removing orphaned postmaster.pid lock.`);
-        try {
-          fs.unlinkSync(lockFile);
-          if (fs.existsSync(ownerFile)) {
-            fs.unlinkSync(ownerFile);
-          }
-        } catch (unlinkErr) {
-          console.error(`[DATA_PROTECTION] Failed to remove orphaned lockfile at '${lockFile}':`, unlinkErr);
-          throw unlinkErr;
-        }
+        throw new Error(`[CRITICAL_DATA_PROTECTION] Lock file '${lockFile}' exists without a verified owner. Preserve it and the database; inspect the instance before manual recovery.`);
       }
     }
 
@@ -146,6 +188,13 @@ export class DatabaseFactory {
     try {
       pglite = dataDir ? new PGlite(dataDir) : new PGlite();
       await pglite.waitReady;
+
+      if (claim) {
+        const originalClose = pglite.close.bind(pglite);
+        const ownedClaim = claim;
+        let closing: Promise<void> | undefined;
+        pglite.close = () => closing ??= originalClose().then(() => { ownedClaim.release(); });
+      }
 
       if (dataDir) {
         const ownerFile = path.join(dataDir, '.owner.pid');
@@ -156,16 +205,17 @@ export class DatabaseFactory {
         }
       }
     } catch (err: unknown) {
+      // A failed engine initialization may have written files. Retain its claim;
+      // do not silently retry or delete engine data/locks after an ambiguous failure.
+      claim?.preserve();
       const errorMsg = err instanceof Error ? err.message : String(err);
       console.error(`\n❌ [FAIL-SAFE HALT] Failed to initialize embedded PostgreSQL engine at '${dataDir || 'in-memory'}'.`);
       console.error(`   Diagnostic Error: ${errorMsg}`);
-      console.error(`   DATA INTEGRITY PRESERVED: Original database files in '${dataDir || 'in-memory'}' were NOT modified or deleted.`);
+      console.error('   Initialization may have written database files. Preserve the directory and lock records for manual review.');
       console.error(`   Manual Recovery Steps:`);
       console.error(`   1. Ensure no other process holds locks on '${dataDir}'.`);
       console.error(`   2. Backup the directory '${dataDir}' before attempting recovery.`);
-      console.error(`   3. If persistent storage was corrupted by an external system crash:`);
-      console.error(`      - For development: Remove-Item -Recurse -Force '${dataDir}' to start clean.`);
-      console.error(`      - For demo: Run 'npm run seed:demo'.\n`);
+       console.error('   3. Preserve the database and lock files for manual review; do not delete data or seed as a recovery shortcut.\n');
       throw new Error(`Database initialization failed for '${dataDir || 'in-memory'}': ${errorMsg}`);
     }
 

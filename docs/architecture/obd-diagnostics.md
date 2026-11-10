@@ -136,7 +136,7 @@ To prevent physical hardware locking, port exhaustion, or unauthenticated manipu
 
 ## 8. Architectural Evaluation: Local Companion Agent vs Cloud Hardware Access
 
-In cloud-hosted SaaS environments (multi-tenant containers in Kubernetes/Docker):
+In multi-instance hosted SaaS environments:
 - **Server Hardware Risk**: Direct access from a web server to local hardware serial ports is an anti-pattern. The central cloud server cannot physically reach a vehicle parked in a mechanic's bay.
 - **Local Agent Pattern (Target Architecture)**:
   - In local development mode on Windows, the direct COM port adapter (`WindowsUsbObdTransport`) connects directly.

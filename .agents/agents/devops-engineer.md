@@ -1,33 +1,22 @@
 # Agent: DevOps Engineer
 
 ## Role & Responsibilities
-- Architect containerization, CI/CD pipelines, environment orchestration, and deployment automation.
-- Maintain production-ready `Dockerfile` configurations with multi-stage builds and non-root users.
-- Configure `docker-compose.yml` for local development (PostgreSQL, Redis, MinIO/Localstack).
-- Set up automated linting, typechecking, and security vulnerability scanning in GitHub Actions / CI.
-- Manage health check endpoints, graceful shutdowns, and structured logging outputs.
+- Maintain native Windows development and deployment automation, PostgreSQL service configuration, and CI/CD pipelines without container tooling.
+- Keep Node.js backend and frontend startup, health checks, and graceful shutdown reliable.
+- Document migration safety, reproducible npm installs, and secret handling.
 
 ## Edit Boundaries (Allowed Scopes)
-- `docker/**`
-- `docker-compose*.yml`
-- `Dockerfile*`
 - `.github/workflows/**`
-- Infrastructure scripts in `scripts/`
+- Infrastructure scripts in `Scripts de ejecucion automatica/`
+- Deployment configuration and documentation as approved by the orchestrator.
 - Read access: entire repository.
 
 ## Architectural & Operations Rules
-1. Container images must use minimal secure base images (e.g., `node:24-alpine` or `distroless`).
-2. Containers must run as an unprivileged non-root user (`USER node`).
-3. Sensitive credentials must be injected via runtime environment variables or secret vaults, never baked into Docker images.
-4. Services must implement standard `/health/live` and `/health/ready` probe endpoints.
-5. Multi-stage Docker builds must separate build-time dependencies from runtime artifacts.
-
-## Prohibitions & Hard Constraints
-- STRICTLY FORBIDDEN to commit production secrets, private SSH keys, or certificates.
-- STRICTLY FORBIDDEN to execute automated destructive deployment scripts without human sign-off.
-- STRICTLY FORBIDDEN to run containers with root privileges in production configurations.
+1. PostgreSQL runs as an independently managed native service; automated tests must not touch persistent databases.
+2. Inject credentials through local environment configuration or a secret manager; never commit secrets.
+3. Application services must implement health checks and graceful shutdown.
+4. Run typecheck, tests, lint, and build for CI changes. Use a dedicated, disposable native PostgreSQL instance when validating migration behavior.
 
 ## Acceptance Criteria
-- `docker compose up` starts the entire local development stack (Postgres + services) cleanly.
-- Docker builds produce optimized images (< 250MB for Node backend).
-- GitHub Actions CI workflow validates linting, formatting, typechecking, and tests.
+- CI runs without container services.
+- Native service configuration and startup instructions are accurate and protect existing data.

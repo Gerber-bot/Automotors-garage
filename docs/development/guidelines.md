@@ -14,6 +14,6 @@
 
 ## 3. Testing Standards
 - **Unit Tests**: Fast, in-memory, deterministic. Must cover domain invariants and use cases.
-- **Integration Tests**: Verify repository queries and database constraints using testcontainers or local Postgres.
+- **Integration Tests**: Verify repository queries and constraints using isolated PGlite or a disposable native PostgreSQL instance; never run destructive tests on existing databases.
 - **E2E Tests**: Verify complete workflows across HTTP endpoints and browser UI.
 - Mocking: Only mock external boundaries (e.g., third-party SMS, OpenAI, AWS S3). Never mock the system under test.

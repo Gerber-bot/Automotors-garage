@@ -60,5 +60,5 @@ Se auditó minuciosamente la parametrización de la unidad de referencia:
 ## 4. Riesgos y Validaciones Pendientes
 
 1. **Validación E2E Visual**: Pendiente de ejecución en navegador real mediante suite E2E (Playwright) para verificar interactividad responsive, navegación y renderizado de badges de homologación en dispositivos móviles y de escritorio.
-2. **Validación con PostgreSQL Real**: Las suites automatizadas se ejecutan actualmente sobre motor PostgreSQL embebido (PGlite). Queda pendiente la comprobación sobre instancia externa de PostgreSQL en contenedor Docker.
+2. **Validación con PostgreSQL Real**: Las suites automatizadas se ejecutan sobre motor PostgreSQL embebido (PGlite). Queda pendiente la comprobación sobre una instancia PostgreSQL nativa, aislada y desechable.
 3. **Incorporación de Documentación Primaria OEM**: Pendiente de obtención y archivo de los manuales de taller oficiales para promover las reglas de `PENDING_VERIFICATION` a `VERIFIED`.

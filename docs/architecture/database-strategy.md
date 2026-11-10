@@ -6,9 +6,9 @@ Automotors Garage defines a tiered database topology ensuring identical PostgreS
 
 | Tier | Engine | Persistence | Isolation | Purpose |
 | :--- | :--- | :--- | :--- | :--- |
-| **DEV** | PGlite (WASM Postgres) | Local disk (`.data/dev/pglite`) | Single workstation | Rapid local iteration without background daemon dependencies |
+| **DEV** | PGlite (WASM Postgres) | Local disk (`.data/postgres_dev` in this installation) | Single workstation | Rapid local iteration without background daemon dependencies; schema preparation is explicit |
 | **TEST** | PGlite (WASM Postgres) | In-memory / Ephemeral directory | Per-suite sandbox | Deterministic test execution, zero cross-test interference |
-| **CI / INTEGRATION** | PostgreSQL 16 (Docker) | Volume-backed | Isolated database per run | Automated regression testing with exact production PostgreSQL engine |
+| **CI** | PGlite (embedded PostgreSQL dialect) | Ephemeral | Per-suite sandbox | Automated regression tests without external services; native PostgreSQL compatibility requires a separate disposable instance |
 | **PRODUCTION** | Managed PostgreSQL (RDS/Neon/Supabase) | Managed multi-AZ storage | Strict multi-tenant row isolation | High availability, connection pooling, SSL/TLS enforcement |
 
 ---
@@ -105,7 +105,7 @@ All migrations are written in strict ANSI/PostgreSQL SQL and are 100% compatible
 - `0003_vehicle_knowledge_base.sql` (8 tables): OEM vehicle knowledge base, powertrains, generations, documentary sources, technical specs, and versioned maintenance rules.
 
 ### Native Windows Service Deployment
-Rather than introducing container virtualization overhead (Docker/WSL) on the developer workstation:
+Without requiring virtualization on the developer workstation:
 - **Service**: Native PostgreSQL 16 runs as a lightweight Windows Service (`postgresql-x64-16`) on `127.0.0.1:5432`.
-- **Isolation Verification**: `Scripts de ejecucion automatica/database/verify-postgresql-native.ps1` safely provisions an isolated integration database (`automotors_garage_integration`), applies all migrations via `DatabaseMigrator`, and verifies table integrity before routing application traffic.
+- **Isolation Verification**: PostgreSQL-native migration validation requires a separately provisioned, disposable instance. The legacy `verify-postgresql-native.ps1` helper can create and migrate a database and must not be used as a read-only connection check or against an existing database.
 - **Data Protection**: Existing development and demo records in `.data/postgres_dev` remain intact until explicit migration in Milestone 14.2.2.

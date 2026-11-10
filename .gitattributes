@@ -10,8 +10,8 @@
 # Setting -text ensures Git treats batch scripts as binary/verbatim, preventing
 # Git from converting CRLF to LF in the repository object database.
 # This guarantees that GitHub 'Download ZIP' and git clones always contain CRLF.
-*.bat -text
-*.cmd -text
+*.bat -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+*.cmd -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 
 # PowerShell scripts (Windows CRLF by default)
 *.ps1 text eol=crlf

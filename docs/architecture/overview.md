@@ -68,8 +68,7 @@ automotors-garage/
 │   └── tsconfig/            # Shared compiler configurations
 ├── docs/                    # Architectural, security, and developer docs
 ├── .agents/                 # Multi-agent definitions and protocols
-├── docker-compose.yml       # Local development backing services
-└── pnpm-workspace.yaml      # Monorepo workspaces definition
+└── package.json             # npm development, test, and build scripts
 ```
 
 ---
@@ -85,4 +84,4 @@ automotors-garage/
 | **Persistence** | PostgreSQL + Drizzle ORM | High reliability, relational integrity, lightweight SQL-first type safety |
 | **Data Validation** | Zod | Runtime schema validation matching compile-time TypeScript types |
 | **Testing** | Vitest & Playwright | Ultra-fast unit testing, reliable cross-browser E2E testing |
-| **Containerization** | Docker | Deterministic local and production runtime environments |
+| **Runtime** | Node.js + native PostgreSQL (PGlite for local tests) | No container runtime required |

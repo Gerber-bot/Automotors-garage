@@ -4,6 +4,21 @@ import { DatabaseFactory, DatabaseMigrator } from '../src/index.ts';
 import { vehicles, workOrders } from '../src/schema/index.ts';
 
 describe('Database Foundation & Relational Schema Test Suite', () => {
+  it('rolls back all statements in a failed migration file', async () => {
+    const db = await DatabaseFactory.createInMemoryTestDb();
+    await assert.rejects(
+      DatabaseMigrator.executeMigrationSql(
+        db,
+        'CREATE TABLE migration_probe (id integer); INSERT INTO migration_probe VALUES (1); INSERT INTO missing_table VALUES (2);',
+        'rollback_probe.sql'
+      ),
+      /rollback_probe.sql/
+    );
+    const client = (db as any).$client;
+    const result = await client.query("SELECT to_regclass('public.migration_probe') AS table_name");
+    assert.equal(result.rows[0].table_name, null);
+  });
+
   it('1. Initializes in-memory PostgreSQL engine and runs initial schema migration', async () => {
     const db = await DatabaseFactory.createInMemoryTestDb();
     await DatabaseMigrator.runMigrations(db);

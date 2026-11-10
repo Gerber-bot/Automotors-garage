@@ -24,8 +24,8 @@ The next phases transition the system from in-memory prototyping to high-perform
 3. **Drizzle Repository Adapters**:
    - Implement `DrizzleVehicleRepository`, `DrizzleWorkOrderRepository`, `DrizzleMaintenanceHistoryRepository`.
    - Implement PostgreSQL atomic transactions (`db.transaction(async (tx) => { ... })`) for `CloseWorkOrderUseCase`.
-4. **Integration Tests with Testcontainers**:
-   - Spin up ephemeral PostgreSQL containers to verify constraints, unique indexes, and rollback behavior.
+4. **Native PostgreSQL Integration Tests**:
+   - Provision disposable local PostgreSQL instances to verify constraints, unique indexes, and rollback behavior without touching persistent databases.
 
 ---
 
@@ -36,23 +36,23 @@ The next phases transition the system from in-memory prototyping to high-perform
 ### Key Objectives:
 1. **Redis Session Store**:
    - Transition `SessionService` from in-memory Maps to Redis with automatic TTL expiration.
-   - Implement cluster-wide token blacklisting for instant cross-pod session revocation.
+    - Implement shared token blacklisting for session revocation across application processes.
 2. **Distributed Sliding-Window Rate Limiter**:
-   - Replace in-memory `RateLimiter` with Redis sorted sets to protect public endpoints and login attempts across multiple containers.
+    - Replace in-memory `RateLimiter` with a shared rate limiter before running multiple application processes.
 3. **Pub/Sub Event Bus**:
    - Dispatch domain events (`WorkOrderClosedEvent`, `MaintenanceDueWarningEvent`) across decoupled worker microservices.
 
 ---
 
-## Milestone 09: DevOps, Containerization & CI/CD Pipeline (P1)
+## Milestone 09: Native Services & CI/CD Pipeline (P1)
 
 **Target**: Automated delivery pipeline and reproducible development environment.
 
 ### Key Objectives:
-1. **Local Multi-Service Docker Compose**:
-   - Services: PostgreSQL 16 (Alpine), Redis 7 (Alpine), LocalStack / MinIO, Backend API, Frontend Web.
-2. **Multi-Stage Dockerfiles**:
-   - Unprivileged `node` user, minimal distroless/alpine images, optimized layer caching for pnpm monorepo.
+1. **Native service management**:
+    - Document installation, health checks, and lifecycle of PostgreSQL and the Node.js application without container tools.
+2. **Reproducible installation**:
+    - Use npm lockfiles and explicit environment configuration for backend and frontend processes.
 3. **GitHub Actions CI Workflow**:
    - Automated typechecking (`npm run typecheck`), linting, and test execution (`npm test`) on every PR.
    - Enforce zero build regressions and zero security vulnerabilities.

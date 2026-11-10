@@ -36,7 +36,7 @@ Antigravity operates with both native runtime subagent lifecycle tools and repos
 | **frontend-engineer** | Next.js, React, Tailwind, shadcn/ui, state | `apps/frontend/**`, `packages/ui/**` | Strict typecheck, responsive UI, accessibility |
 | **ai-engineer** | Voice transcription (Whisper), predictive service, LLMs | `apps/backend/src/modules/ai/**`, `packages/ai-services/**` | Deterministic mocked tests, Zod validation |
 | **qa-engineer** | E2E Playwright, Vitest suites, test data factories | `tests/**`, `apps/*/test/**`, `*.spec.ts`, `*.e2e-spec.ts` | 100% assertions valid, no flaky tests |
-| **devops-engineer** | Docker, compose, CI/CD, local infrastructure | `docker/**`, `docker-compose*.yml`, `Dockerfile*`, `.github/**` | Clean container builds, unprivileged user |
+| **devops-engineer** | Native services, CI/CD, local infrastructure | `.github/**`, `Scripts de ejecucion automatica/**`, deployment configs | Native startup and health checks without containers |
 | **documentation-engineer** | Architecture guides, API specs, developer onboarding | `docs/**`, `README.md`, `CONTRIBUTING.md`, OpenAPI docs | Accurate markdown, verified setup guides |
 
 ---

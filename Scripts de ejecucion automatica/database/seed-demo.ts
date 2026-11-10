@@ -1,38 +1,20 @@
-import { DatabaseFactory, DatabaseMigrator } from '@automotors/database';
+import { DatabaseFactory, DatabaseMigrator, resolveLocalPgliteDir } from '@automotors/database';
 import { DemoSeeder } from '../../apps/backend/src/infrastructure/database/demo-seed.ts';
+import { resolveDemoSeedTarget } from '../../packages/database/src/demo-seed-target.ts';
+import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 
 async function main() {
   console.log('🌱 Starting Automotors Garage Demo Data Seeding...');
 
-  if (process.env.NODE_ENV === 'production') {
-    console.error('❌ SEEDING ABORTED: Cannot seed demo data in production environment.');
-    process.exit(1);
-  }
-
-  let db;
-  const env = process.env.NODE_ENV || 'development';
-  const defaultDataDir = env === 'demo' ? './.data/postgres_demo' : './.data/postgres_dev';
-  const dataDir = process.env.PG_DATA_DIR || defaultDataDir;
-
+  const dataDir = resolveDemoSeedTarget(process.env);
+  if (!existsSync(dataDir)) throw new Error('Demo target is not prepared; explicitly prepare a new disposable database first');
+  let pglite: Awaited<ReturnType<typeof DatabaseFactory.createInMemoryTestDb>> | undefined;
   try {
-    const pool = DatabaseFactory.createPool({
-      host: process.env.POSTGRES_HOST || 'localhost',
-      port: Number(process.env.POSTGRES_PORT || 5432),
-      user: process.env.POSTGRES_USER || 'postgres',
-      password: process.env.POSTGRES_PASSWORD || 'postgres',
-      database: process.env.POSTGRES_DB || 'automotors_garage',
-    });
-    db = DatabaseFactory.create(pool);
-    await DatabaseMigrator.runMigrations(db);
-    console.log('✅ Connected to external PostgreSQL database.');
-  } catch {
-    console.log(`ℹ️  Using persistent embedded PostgreSQL engine at '${dataDir}'...`);
-    db = await DatabaseFactory.createInMemoryTestDb(dataDir);
-    await DatabaseMigrator.runMigrations(db);
-  }
-
-  const seeder = new DemoSeeder(db);
-  const result = await seeder.seed();
+    pglite = await DatabaseFactory.createInMemoryTestDb(dataDir);
+    const db = pglite;
+    const status = await DatabaseMigrator.status(db);
+    if (!status.ready) throw new Error('Demo seeding requires an explicitly prepared database; run db:status first');
+    const result = await new DemoSeeder(db).seed();
 
   console.log('🎉 Demo Seeding Complete:');
   console.log(`   - Workshops: ${result.workshopsCount}`);
@@ -47,14 +29,14 @@ async function main() {
   console.log('   - Lucas Gómez (Mechanic): lucas@alphamotors.com / Password123!');
   console.log('   - Workshop ID: w-alpha (Alpha Motors Garage)');
 
-  try {
-    const client = (db as any)?.$client || (db as any)?.session?.client;
-    if (client?.close) {
-      await client.close();
-      console.log('✅ Demo database connections closed cleanly.');
+  } finally {
+    if (pglite) {
+      await pglite.$client.close();
+      const ownerFile = `${resolveLocalPgliteDir(dataDir)}/.owner.pid`;
+      if (existsSync(ownerFile) && readFileSync(ownerFile, 'utf8').trim() === String(process.pid)) {
+        unlinkSync(ownerFile);
+      }
     }
-  } catch {
-    // non-fatal
   }
 }
 

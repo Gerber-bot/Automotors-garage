@@ -57,4 +57,4 @@ This checklist defines the manual validation procedure for verifying the stabili
 |---|---|---|---|---|
 | 5.1 | **Embedded PGlite Default** | Boot application with `DB_PROVIDER=pglite`. | Runs zero-config in WASM mode with local persistence under `.data/`. | [ ] |
 | 5.2 | **Native PostgreSQL Compatibility** | Set `DB_PROVIDER=postgres` with valid `DATABASE_URL` in test environment. | Connects to PostgreSQL, executes reversible migrations, and verifies schema parity. | [ ] |
-| 5.3 | **Migration Integrity** | Run `npm run db:migrate` or automated database test suite. | Migrations `0001`, `0002`, and `0003` apply sequentially without syntax errors. | [ ] |
+| 5.3 | **Migration Integrity** | On an isolated, disposable database, run `npm run db:status`, explicitly prepare with `npm run db:apply`, then check status again. | Migrations `0001`–`0004` are recorded with matching checksums; a second status check reports no pending work. Do not use application data. | [ ] |

@@ -40,12 +40,17 @@ Ensure-RuntimeDirectories -Root $repoRoot
 
 $backendPidFile = Join-Path $repoRoot ".run/server.pid"
 $frontendPidFile = Join-Path $repoRoot ".run/frontend.pid"
+$backendManifest = Join-Path $repoRoot '.run/backend.process.json'
+$frontendManifest = Join-Path $repoRoot '.run/frontend.process.json'
+$backendControl = Join-Path $repoRoot '.run/backend.control.json'
+$frontendControl = Join-Path $repoRoot '.run/frontend.control.json'
 $backendLogFile = Join-Path $repoRoot ".logs/server_dev.log"
 $backendErrLogFile = Join-Path $repoRoot ".logs/server_dev.err.log"
 $frontendLogFile = Join-Path $repoRoot ".logs/frontend_dev.log"
 $frontendErrLogFile = Join-Path $repoRoot ".logs/frontend_dev.err.log"
 $frontendDir = Join-Path $repoRoot "apps/frontend"
 $nextBin = Join-Path $frontendDir "node_modules/next/dist/bin/next"
+$frontendEntry = Join-Path $frontendDir 'dev-server.mjs'
 
 # ==============================================================================
 # SUBRUTINA: DETENER SERVICIOS (STOP)
@@ -55,45 +60,9 @@ function Invoke-AutomotorsStop {
     Write-Host " AUTOMOTORS GARAGE -- DETENCION DE SERVICIOS" -ForegroundColor Cyan
     Write-Host "=======================================================`n" -ForegroundColor Cyan
 
-    # 1. Detener Frontend Next.js
-    Write-Host "[1/2] Verificando Frontend Next.js (puerto: $FrontendPort)..." -ForegroundColor Yellow
-    $fPid = Get-ActiveStoredPid -PidFilePath $frontendPidFile -ProcessType "frontend"
-    if (-not $fPid) {
-        $fConn = Get-NetTCPConnection -LocalPort $FrontendPort -ErrorAction SilentlyContinue
-        if ($fConn) {
-            $candidatePid = $fConn[0].OwningProcess
-            if (Test-IsAutomotorsProcess -ProcId $candidatePid -ProcessType "frontend") {
-                $fPid = $candidatePid
-            }
-        }
-    }
-
-    if ($fPid) {
-        Stop-AutomotorsProcessClean -ProcId $fPid -ServiceName "Frontend Next.js" -PidFilePath $frontendPidFile -Force
-    } else {
-        Write-Host "  [INFO] No hay procesos de Frontend activos en el puerto $FrontendPort." -ForegroundColor Green
-        if (Test-Path $frontendPidFile) { Remove-Item $frontendPidFile -Force -ErrorAction SilentlyContinue }
-    }
-
-    # 2. Detener Backend API
-    Write-Host "`n[2/2] Verificando Backend API (puerto: $BackendPort)..." -ForegroundColor Yellow
-    $bPid = Get-ActiveStoredPid -PidFilePath $backendPidFile -ProcessType "backend"
-    if (-not $bPid) {
-        $bConn = Get-NetTCPConnection -LocalPort $BackendPort -ErrorAction SilentlyContinue
-        if ($bConn) {
-            $candidatePid = $bConn[0].OwningProcess
-            if (Test-IsAutomotorsProcess -ProcId $candidatePid -ProcessType "backend") {
-                $bPid = $candidatePid
-            }
-        }
-    }
-
-    if ($bPid) {
-        Stop-AutomotorsProcessClean -ProcId $bPid -ServiceName "Backend API" -PidFilePath $backendPidFile -Force
-    } else {
-        Write-Host "  [INFO] No hay procesos de Backend activos en el puerto $BackendPort." -ForegroundColor Green
-        if (Test-Path $backendPidFile) { Remove-Item $backendPidFile -Force -ErrorAction SilentlyContinue }
-    }
+    $frontendStopped = Stop-OwnedProcessGracefully -ManifestPath $frontendManifest -ControlPath $frontendControl -Root $repoRoot -Role frontend
+    $backendStopped = Stop-OwnedProcessGracefully -ManifestPath $backendManifest -ControlPath $backendControl -Root $repoRoot -Role backend
+    if (-not ($frontendStopped -and $backendStopped)) { throw 'One or more services could not be stopped gracefully.' }
 
     # 3. Confirmar preservación de datos
     Write-Host "`n=======================================================" -ForegroundColor Green
@@ -107,6 +76,7 @@ function Invoke-AutomotorsStop {
 # SUBRUTINA: INICIAR SERVICIOS (START / START-LAN)
 # ==============================================================================
 function Invoke-AutomotorsStart([bool]$isLanMode) {
+    Remove-Item Env:AUTOMOTORS_MANAGED_START -ErrorAction SilentlyContinue
     $modeLabel = if ($isLanMode) { "MODO RED LOCAL / LAN" } else { "DESARROLLO LOCAL ESTANDAR" }
     Write-Host "`n=======================================================" -ForegroundColor Cyan
     Write-Host " AUTOMOTORS GARAGE -- INICIO COMPLETO ($modeLabel)" -ForegroundColor Cyan
@@ -119,15 +89,7 @@ function Invoke-AutomotorsStart([bool]$isLanMode) {
         exit 1
     }
 
-    # 1. Asegurar configuración de entorno (.env)
-    $envPath = Join-Path $repoRoot ".env"
-    $envExamplePath = Join-Path $repoRoot ".env.example"
-    if (-not (Test-Path $envPath)) {
-        if (Test-Path $envExamplePath) {
-            Copy-Item -Path $envExamplePath -Destination $envPath
-            Write-Host "  [CONFIG] Creado archivo .env con valores seguros por defecto (PGlite WASM)." -ForegroundColor Green
-        }
-    }
+    # Optional .env is read by the backend and migration command; never create it implicitly.
 
     # 2. Detección de red e IP
     $hostAddress = "127.0.0.1"
@@ -144,27 +106,39 @@ function Invoke-AutomotorsStart([bool]$isLanMode) {
         }
     }
 
-    # 3. Comprobar instancias preexistentes
-    $backendWasRunning = $false
-    $frontendWasRunning = $false
-
-    if (Test-Path $backendPidFile) {
-        $storedPid = Get-Content $backendPidFile -ErrorAction SilentlyContinue
-        if ($storedPid -and (Get-Process -Id ([int]$storedPid) -ErrorAction SilentlyContinue)) {
-            $backendWasRunning = $true
+    # An occupied port is never evidence of ownership. Clear only records whose
+    # recorded process is definitively gone; anything ambiguous fails closed.
+    foreach ($spec in @(
+        @{ Manifest = $backendManifest; Control = $backendControl; Role = 'backend' },
+        @{ Manifest = $frontendManifest; Control = $frontendControl; Role = 'frontend' }
+    )) {
+        if ((Test-Path $spec.Manifest) -and -not (Get-OwnedProcess -ManifestPath $spec.Manifest -Root $repoRoot -Role $spec.Role)) {
+            if (-not (Clear-StaleOwnedRecord -ManifestPath $spec.Manifest -ControlPath $spec.Control -Root $repoRoot -Role $spec.Role)) {
+                throw "Unverified $($spec.Role) process manifest at $($spec.Manifest). Resolve it manually before starting."
+            }
+            Write-Host "  [INFO] Registro de proceso $($spec.Role) inactivo descartado." -ForegroundColor DarkGray
         }
     }
-    $bConn = Get-NetTCPConnection -LocalPort $BackendPort -State Listen -ErrorAction SilentlyContinue
-    if ($bConn) { $backendWasRunning = $true }
-
-    if (Test-Path $frontendPidFile) {
-        $storedPid = Get-Content $frontendPidFile -ErrorAction SilentlyContinue
-        if ($storedPid -and (Get-Process -Id ([int]$storedPid) -ErrorAction SilentlyContinue)) {
-            $frontendWasRunning = $true
+    try {
+        $backendOwned = Assert-AvailableOwnedPort -Port $BackendPort -ManifestPath $backendManifest -Root $repoRoot -Role backend
+        $frontendOwned = Assert-AvailableOwnedPort -Port $FrontendPort -ManifestPath $frontendManifest -Root $repoRoot -Role frontend
+    } catch {
+        if ($_.Exception.Data['OwnedProcessActive']) {
+            Write-Host $_.Exception.Message -ForegroundColor Yellow
+            return
         }
+        throw
     }
-    $fConn = Get-NetTCPConnection -LocalPort $FrontendPort -State Listen -ErrorAction SilentlyContinue
-    if ($fConn) { $frontendWasRunning = $true }
+    $backendWasRunning = [bool]$backendOwned
+    $frontendWasRunning = [bool]$frontendOwned
+    if ($BackendPort -eq $FrontendPort) { throw 'Backend and frontend ports must differ.' }
+
+    if ($backendWasRunning -or $frontendWasRunning) {
+        Write-Host 'Automotors is already running (or partially running) in this installation.' -ForegroundColor Yellow
+        Write-Host 'No processes were started or stopped. Use DETENER_AUTOMOTORS.bat before restarting.' -ForegroundColor Yellow
+        # Never open PGlite from a second migration-status process while it is in use.
+        return
+    }
 
     # 4. Validar requisitos del entorno
     Write-Host "[1/4] Verificando requisitos de ejecución..." -ForegroundColor Yellow
@@ -178,6 +152,15 @@ function Invoke-AutomotorsStart([bool]$isLanMode) {
         }
     }
 
+    # Migration agent owns this read-only preflight. Never start backend with pending,
+    # modified, or unmanaged migrations. STOP and CHECK intentionally skip it.
+    # Run through cmd so Node's ".env not found" note on stderr cannot abort the launcher.
+    $migrationStatus = cmd /c "npm run db:status 2>&1"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host $migrationStatus -ForegroundColor Red
+        throw 'Migration status preflight failed; run db:status and explicitly apply/adopt as appropriate.'
+    }
+
     # 5. Iniciar Backend (puerto 4000)
     Write-Host "`n[2/4] Preparando servidor Backend API (puerto: $BackendPort)..." -ForegroundColor Yellow
     if ($backendWasRunning) {
@@ -186,23 +169,29 @@ function Invoke-AutomotorsStart([bool]$isLanMode) {
         $env:NODE_ENV = "development"
         $env:PORT = "$BackendPort"
         $env:HOST = $hostAddress
-        $env:PG_DATA_DIR = "./.data/postgres_dev"
         $env:PID_FILE = $backendPidFile
 
+        $backendEntry = Join-Path $repoRoot 'apps/backend/src/main.ts'
         $backendArgs = @(
+            "--env-file-if-exists=.env",
             "--experimental-strip-types",
-            "apps/backend/src/main.ts"
+            "`"$backendEntry`""
         )
 
-        $backendProcess = Start-Process -FilePath "node" `
-            -ArgumentList $backendArgs `
-            -WorkingDirectory $repoRoot `
-            -RedirectStandardOutput $backendLogFile `
-            -RedirectStandardError $backendErrLogFile `
-            -WindowStyle Hidden `
-            -PassThru
+        try {
+            $env:AUTOMOTORS_MANAGED_START = 'true'
+            $backendProcess = Start-Process -FilePath "node" `
+                -ArgumentList $backendArgs `
+                -WorkingDirectory $repoRoot `
+                -RedirectStandardOutput $backendLogFile `
+                -RedirectStandardError $backendErrLogFile `
+                -WindowStyle Hidden `
+                -PassThru
+        } finally {
+            Remove-Item Env:AUTOMOTORS_MANAGED_START -ErrorAction SilentlyContinue
+        }
 
-        Set-Content -Path $backendPidFile -Value $backendProcess.Id -Encoding UTF8
+        Save-OwnedProcess -Process $backendProcess -ManifestPath $backendManifest -Root $repoRoot -Role backend -Marker $backendEntry
         Write-Host "  Proceso Backend iniciado con PID: $($backendProcess.Id)" -ForegroundColor Green
     }
 
@@ -227,7 +216,8 @@ function Invoke-AutomotorsStart([bool]$isLanMode) {
         Write-Host "  [FAIL] El backend no confirmó readiness (motor PGlite no respondió en tiempo)." -ForegroundColor Red
         if (-not $backendWasRunning) {
             Write-Host "  [ROLLBACK] Limpiando backend recién iniciado..." -ForegroundColor Yellow
-            Invoke-AutomotorsStop
+            $rollback = Stop-OwnedProcessGracefully -ManifestPath $backendManifest -ControlPath $backendControl -Root $repoRoot -Role backend
+            if (-not $rollback) { Write-Warning 'Backend rollback requires manual intervention; no force termination attempted.' }
         }
         exit 1
     }
@@ -246,82 +236,57 @@ function Invoke-AutomotorsStart([bool]$isLanMode) {
             }
         }
 
-        $frontendArgs = @(
-            $nextBin,
-            "dev",
-            ".",
-            "-p",
-            "$FrontendPort",
-            "-H",
-            "$hostAddress"
-        )
-
-        $frontendReady = $false
-        $attempts = 0
-        $maxAttempts = 2
-
-        while ($attempts -lt $maxAttempts -and -not $frontendReady) {
-            $attempts++
+        $env:FRONTEND_PORT = "$FrontendPort"
+        $env:HOST = $hostAddress
+        try {
+            $env:AUTOMOTORS_MANAGED_START = 'true'
             $frontendProcess = Start-Process -FilePath "node" `
-                -ArgumentList $frontendArgs `
+                -ArgumentList @('--experimental-strip-types', "`"$frontendEntry`"") `
                 -WorkingDirectory $frontendDir `
                 -RedirectStandardOutput $frontendLogFile `
                 -RedirectStandardError $frontendErrLogFile `
                 -WindowStyle Hidden `
                 -PassThru
+        } finally {
+            Remove-Item Env:AUTOMOTORS_MANAGED_START -ErrorAction SilentlyContinue
+        }
 
-            Set-Content -Path $frontendPidFile -Value $frontendProcess.Id -Encoding UTF8
-            Write-Host "  Proceso Frontend iniciado con PID: $($frontendProcess.Id)" -ForegroundColor Green
-            Write-Host "  Aguardando disponibilidad de Next.js (http://127.0.0.1:$FrontendPort/)..." -ForegroundColor Yellow
+        Save-OwnedProcess -Process $frontendProcess -ManifestPath $frontendManifest -Root $repoRoot -Role frontend -Marker $frontendEntry
+        Write-Host "  Proceso Frontend iniciado con PID: $($frontendProcess.Id)" -ForegroundColor Green
+        Write-Host "  Aguardando disponibilidad de Next.js (http://127.0.0.1:$FrontendPort/)..." -ForegroundColor Yellow
 
-            $deadline = (Get-Date).AddSeconds($TimeoutSec)
-            $processExitedAbruptly = $false
+        $frontendReady = $false
+        $deadline = (Get-Date).AddSeconds($TimeoutSec)
 
-            while ((Get-Date) -lt $deadline) {
-                Start-Sleep -Milliseconds 800
-                $checkProc = Get-Process -Id $frontendProcess.Id -ErrorAction SilentlyContinue
-                if (-not $checkProc) {
-                    $processExitedAbruptly = $true
+        while ((Get-Date) -lt $deadline) {
+            Start-Sleep -Milliseconds 800
+            $checkProc = Get-Process -Id $frontendProcess.Id -ErrorAction SilentlyContinue
+            if (-not $checkProc) { break }
+
+            try {
+                $resp = Invoke-WebRequest -Uri "http://127.0.0.1:$FrontendPort/" -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue
+                if ($resp.StatusCode -eq 200 -and (Test-Path $frontendControl)) {
+                    $frontendReady = $true
                     break
                 }
+            } catch {}
+        }
 
-                try {
-                    $resp = Invoke-WebRequest -Uri "http://127.0.0.1:$FrontendPort/" -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue
-                    if ($resp.StatusCode -eq 200) {
-                        $frontendReady = $true
-                        break
-                    }
-                } catch {}
+        if (-not $frontendReady) {
+            Write-Host "  [FAIL] El proceso Next.js no respondió dentro del tiempo límite o finalizó abruptamente. Revise $frontendLogFile." -ForegroundColor Red
+            if (Test-Path $frontendLogFile) {
+                Get-Content $frontendLogFile -Tail 15 | ForEach-Object { Write-Host "     $_" -ForegroundColor DarkRed }
             }
-
-            if ($frontendReady) {
-                break
-            }
-
-            if ($processExitedAbruptly -and $attempts -lt $maxAttempts) {
-                Write-Host "  [AUTO-REPAIR] Next.js reportó bloqueo de caché transitoria (OneDrive/.next-dev). Purgando caché y reintentando..." -ForegroundColor Yellow
-                $devCache = Join-Path $frontendDir ".next-dev"
-                if (Test-Path $devCache) {
-                    Remove-Item -Recurse -Force $devCache -ErrorAction SilentlyContinue
-                }
-                Start-Sleep -Milliseconds 600
-                continue
-            }
-
-            if (-not $frontendReady) {
-                Write-Host "  [FAIL] El proceso Next.js no respondió dentro del tiempo límite o finalizó abruptamente. Revise $frontendLogFile." -ForegroundColor Red
-                if (Test-Path $frontendLogFile) {
-                    Get-Content $frontendLogFile -Tail 15 | ForEach-Object { Write-Host "     $_" -ForegroundColor DarkRed }
-                }
-                Invoke-AutomotorsStop
-                exit 1
-            }
+            $frontendRollback = Stop-OwnedProcessGracefully -ManifestPath $frontendManifest -ControlPath $frontendControl -Root $repoRoot -Role frontend
+            if (-not $frontendRollback) { Write-Warning 'Frontend rollback requires manual intervention; no force termination attempted.' }
+            $rollback = Stop-OwnedProcessGracefully -ManifestPath $backendManifest -ControlPath $backendControl -Root $repoRoot -Role backend
+            exit 1
         }
     }
 
     # 8. Consolidar estado final
-    $finalBackendPid = if (Test-Path $backendPidFile) { Get-Content $backendPidFile -ErrorAction SilentlyContinue } else { "Activo" }
-    $finalFrontendPid = if (Test-Path $frontendPidFile) { Get-Content $frontendPidFile -ErrorAction SilentlyContinue } else { "Activo" }
+    $finalBackendPid = if ($backendOwned) { $backendOwned.pid } else { $backendProcess.Id }
+    $finalFrontendPid = if ($frontendOwned) { $frontendOwned.pid } else { $frontendProcess.Id }
 
     Write-Host "`n=======================================================" -ForegroundColor Green
     Write-Host " AUTOMOTORS GARAGE -- STACK COMPLETO OPERATIVO" -ForegroundColor Green

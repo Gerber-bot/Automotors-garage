@@ -31,7 +31,7 @@ choco install postgresql16 -y
 1. Descargar el instalador de PostgreSQL 16 para Windows x86-64 desde [EnterpriseDB Official](https://www.enterprisedb.com/downloads/postgres-postgresql-downloads).
 2. Durante el asistente de instalación:
    - Mantener el puerto por defecto: `5432`.
-   - Asignar una contraseña para el superusuario `postgres` (ej. `postgres_secure_password`).
+    - Asignar una contraseña privada para el superusuario `postgres`; utilizar un rol dedicado para la aplicación.
    - Configuración regional (*Locale*): `Spanish, Argentina` o `C.UTF-8`.
 3. El instalador registrará e iniciará el servicio de Windows `postgresql-x64-16`.
 
@@ -68,41 +68,34 @@ Para activar el modo PostgreSQL nativo en Automotors Garage, edite o cree su arc
 # Opciones: 'pglite' (embebido WASM) o 'postgres' (PostgreSQL nativo)
 DB_PROVIDER=postgres
 
-# Conexión completa por URL:
-DATABASE_URL=postgresql://postgres:postgres_secure_password@127.0.0.1:5432/automotors_garage?schema=public
+# Conexión completa por URL (configurar el valor real solo en el archivo local):
+DATABASE_URL=postgresql://<usuario>:<clave>@127.0.0.1:5432/<base>
 
 # O parámetros individuales equivalentes:
 DATABASE_HOST=127.0.0.1
 DATABASE_PORT=5432
 DATABASE_USER=postgres
-DATABASE_PASSWORD=postgres_secure_password
+DATABASE_PASSWORD=<clave_privada>
 DATABASE_NAME=automotors_garage
 DATABASE_SSL=false
 ```
 
 > [!IMPORTANT]
 > **Seguridad de Conexión y Fail-Fast**:
-> - Si `DB_PROVIDER=postgres` (o en `NODE_ENV=production`) y la base de datos no está disponible o las credenciales son incorrectas, **el sistema aborta inmediatamente (`process.exit(1)`)**.
-> - **No existe fallback silencioso a PGlite** cuando se solicita explícitamente PostgreSQL o en producción, evitando escrituras accidentales fuera del motor real.
+> - Con `DB_PROVIDER=postgres` (o `NODE_ENV=production` sin proveedor explícito), si la base no está disponible el proceso termina sin cambiar automáticamente a PGlite.
+> - En producción el proveedor debe ser PostgreSQL nativo; una configuración incompatible debe detener el proceso. Verifique `DB_PROVIDER=postgres` en el despliegue.
 > - Si desea trabajar sin levantar PostgreSQL, configure simplemente `DB_PROVIDER=pglite`.
+> - Los comandos `npm run start:api` y `npm run dev` cargan `.env` si existe. No publique el archivo ni las credenciales.
 
 ---
 
-## 5. Script de Verificación y Base de Integración Aislada
+## 5. Comprobación segura y migraciones
 
-Se provee un script PowerShell seguro que valida el entorno sin afectar los datos existentes de desarrollo:
+Para comprobar la instalación sin escribir en bases existentes, utilice `Get-Service postgresql*`, `pg_isready -h 127.0.0.1 -p 5432` y, si dispone de acceso, una consulta `SELECT version()` con `psql` sobre una base autorizada.
 
-```powershell
-# Ejecutar verificación segura en base de integración
-powershell -File "Scripts de ejecucion automatica/database/verify-postgresql-native.ps1" -DatabaseName "automotors_garage_integration"
-```
+**No ejecute** el script `verify-postgresql-native.ps1` para comprobar disponibilidad: puede crear una base y aplicar migraciones. El backend consulta el historial al iniciar, sin aplicar cambios. Utilice `npm run db:status` y reserve `db:apply` para un destino autorizado. **`db:adopt` está deshabilitado**: una base anterior sin registro debe conservarse y revisarse manualmente, nunca marcarse automáticamente. La validación nativa de PostgreSQL sigue pendiente; PGlite no la sustituye.
 
-### Funcionalidades de Seguridad del Script:
-1. **Comprobación de Socket TCP**: Verifica si el puerto `5432` está respondiendo en `127.0.0.1`.
-2. **Rechazo de Bases Prohibidas**: Bloquea de forma estricta la ejecución contra bases que contengan `prod`, `production` o la base principal `automotors_garage` para prevenir sobrescrituras accidentales.
-3. **Creación Automática de Base Aislada**: Si `automotors_garage_integration` no existe, la crea sin tocar ninguna otra base.
-4. **Ejecución Transaccional de Migraciones**: Aplica secuencialmente `0001`, `0002` y `0003` mediante `DatabaseMigrator`.
-5. **Comprobación de Esquema**: Confirma la presencia exacta de las **26 tablas relacionales** en `information_schema.tables`.
+Para probar la migración, aprovisione una instancia PostgreSQL nativa **aislada y desechable**, configure un rol y una base exclusivos para pruebas, y aplique el SQL bajo supervisión después de comprobar el destino. Nunca use bases con datos persistentes.
 
 ---
 

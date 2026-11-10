@@ -150,14 +150,12 @@ try {
             $nMinor = [int]$matches[2]
 
             if ($nMajor -ge 24) {
-                Register-Check -Category $catTools -Name "Node.js" -Status "OK" -Details "$nodeRawVer (Recomendado para Automotors Garage)"
-            } elseif ($nMajor -ge 20 -and ($nMajor -gt 20 -or $nMinor -ge 18)) {
-                Register-Check -Category $catTools -Name "Node.js" -Status "OK" -Details "$nodeRawVer (Compatible con --experimental-strip-types, recomendado v24)"
+                Register-Check -Category $catTools -Name "Node.js" -Status "OK" -Details "$nodeRawVer (compatible con --env-file-if-exists)"
             } else {
                 Register-Check -Category $catTools -Name "Node.js" -Status "ERROR" `
-                    -Details "$nodeRawVer es inferior a la versión mínima requerida (v20.18.0+)." `
-                    -Missing "Node.js v20.18.0 o superior (recomendado: Node.js 24)" `
-                    -Why "Automotors Garage requiere soporte nativo para TypeScript mediante --experimental-strip-types." `
+                    -Details "$nodeRawVer es inferior a la versión mínima requerida (v24+)." `
+                    -Missing "Node.js v24 o superior" `
+                    -Why "El inicio requiere --env-file-if-exists y --experimental-strip-types." `
                     -HowToFix "Descargue e instale Node.js 24 LTS desde el sitio oficial: https://nodejs.org/"
             }
         }
@@ -167,7 +165,7 @@ try {
 if (-not $nodeInstalled) {
     Register-Check -Category $catTools -Name "Node.js" -Status "ERROR" `
         -Details "Node.js no está instalado o no se encuentra en el PATH del sistema." `
-        -Missing "Node.js (versión 20.18.0+ o versión 24 recomendada)" `
+        -Missing "Node.js v24 o superior" `
         -Why "Node.js es indispensable para compilar y ejecutar el frontend Next.js y el backend API." `
         -HowToFix "Descargue e instale Node.js desde el sitio oficial: https://nodejs.org/"
 }
@@ -356,10 +354,10 @@ if (Test-Path $envPath) {
     Register-Check -Category $catConfig -Name "Archivo de Configuración (.env)" -Status "OK" -Details "Archivo .env presente en la raíz."
 } elseif (Test-Path $envExamplePath) {
     Register-Check -Category $catConfig -Name "Archivo de Configuración (.env)" -Status "ADVERTENCIA" `
-        -Details "No existe .env, pero .env.example está presente (se creará con valores seguros al iniciar)." `
+        -Details "No existe .env. El inicio no crea ni copia configuraciones automaticamente." `
         -Missing "Archivo de entorno .env" `
         -Why "Contiene variables como DB_PROVIDER y puertos locales." `
-        -HowToFix "INICIAR_COMPLETO.bat copiará .env.example automáticamente. O copie manualmente: Copy-Item .env.example .env" `
+        -HowToFix "Revise .env.example y prepare .env explicitamente, o configure variables de proceso para una prueba aislada." `
         -Command "Copy-Item .env.example .env"
 } else {
     Register-Check -Category $catConfig -Name "Archivo de Configuración (.env)" -Status "ERROR" `
@@ -392,22 +390,23 @@ try {
     $backendConn = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
     if ($backendConn) {
         $bPid = $backendConn[0].OwningProcess
-        $isAutoBackend = $false
-        if (Get-Command Test-IsAutomotorsProcess -ErrorAction SilentlyContinue) {
-            $isAutoBackend = Test-IsAutomotorsProcess -ProcId $bPid -ProcessType "backend"
-        }
-
-        if ($isAutoBackend) {
+        $backendOwned = Get-OwnedProcess -ManifestPath (Join-Path $repoRoot '.run/backend.process.json') -Root $repoRoot -Role backend
+        if ($backendOwned -and @($backendConn | Where-Object { $_.OwningProcess -ne $backendOwned.pid }).Count -eq 0) {
             Register-Check -Category $catPorts -Name "Puerto Backend ($Port)" -Status "OK" -Details "Automotors Backend API ya se encuentra activo (PID: $bPid)."
         } else {
-            Register-Check -Category $catPorts -Name "Puerto Backend ($Port)" -Status "ADVERTENCIA" `
+            Register-Check -Category $catPorts -Name "Puerto Backend ($Port)" -Status "ERROR" `
                 -Details "Puerto $Port ocupado por otro proceso (PID: $bPid). Puede cambiar el puerto o cerrarlo." `
                 -Missing "Puerto $Port libre" `
                 -Why "Si otro programa ocupa el puerto 4000, el backend no podrá escuchar peticiones." `
                 -HowToFix "Cierre la aplicación que usa el puerto o ejecute DETENER_AUTOMOTORS.bat si pertenece a una instancia anterior."
         }
     } else {
-        Register-Check -Category $catPorts -Name "Puerto Backend ($Port)" -Status "OK" -Details "Puerto $Port disponible para escuchar conexiones."
+        try {
+            Assert-AvailableOwnedPort -Port $Port -ManifestPath (Join-Path $repoRoot '.run/backend.process.json') -Root $repoRoot -Role backend | Out-Null
+            Register-Check -Category $catPorts -Name "Puerto Backend ($Port)" -Status "OK" -Details "Puerto $Port disponible para escuchar conexiones."
+        } catch {
+            Register-Check -Category $catPorts -Name "Puerto Backend ($Port)" -Status "ERROR" -Details "Puerto $Port ocupado o no verificable: $_"
+        }
     }
 } catch {
     Register-Check -Category $catPorts -Name "Puerto Backend ($Port)" -Status "OK" -Details "Verificación de socket completada."
@@ -418,22 +417,23 @@ try {
     $frontendConn = Get-NetTCPConnection -LocalPort $FrontendPort -State Listen -ErrorAction SilentlyContinue
     if ($frontendConn) {
         $fPid = $frontendConn[0].OwningProcess
-        $isAutoFrontend = $false
-        if (Get-Command Test-IsAutomotorsProcess -ErrorAction SilentlyContinue) {
-            $isAutoFrontend = Test-IsAutomotorsProcess -ProcId $fPid -ProcessType "frontend"
-        }
-
-        if ($isAutoFrontend) {
+        $frontendOwned = Get-OwnedProcess -ManifestPath (Join-Path $repoRoot '.run/frontend.process.json') -Root $repoRoot -Role frontend
+        if ($frontendOwned -and @($frontendConn | Where-Object { $_.OwningProcess -ne $frontendOwned.pid }).Count -eq 0) {
             Register-Check -Category $catPorts -Name "Puerto Frontend ($FrontendPort)" -Status "OK" -Details "Automotors Frontend Next.js ya se encuentra activo (PID: $fPid)."
         } else {
-            Register-Check -Category $catPorts -Name "Puerto Frontend ($FrontendPort)" -Status "ADVERTENCIA" `
+            Register-Check -Category $catPorts -Name "Puerto Frontend ($FrontendPort)" -Status "ERROR" `
                 -Details "Puerto $FrontendPort ocupado por otro proceso (PID: $fPid). Debe liberarse antes de iniciar." `
                 -Missing "Puerto $FrontendPort libre" `
                 -Why "Next.js requiere el puerto 3000 para servir la interfaz web." `
                 -HowToFix "Detenga el servicio que utiliza el puerto 3000 o ejecute DETENER_AUTOMOTORS.bat."
         }
     } else {
-        Register-Check -Category $catPorts -Name "Puerto Frontend ($FrontendPort)" -Status "OK" -Details "Puerto $FrontendPort disponible para escuchar conexiones."
+        try {
+            Assert-AvailableOwnedPort -Port $FrontendPort -ManifestPath (Join-Path $repoRoot '.run/frontend.process.json') -Root $repoRoot -Role frontend | Out-Null
+            Register-Check -Category $catPorts -Name "Puerto Frontend ($FrontendPort)" -Status "OK" -Details "Puerto $FrontendPort disponible para escuchar conexiones."
+        } catch {
+            Register-Check -Category $catPorts -Name "Puerto Frontend ($FrontendPort)" -Status "ERROR" -Details "Puerto $FrontendPort ocupado o no verificable: $_"
+        }
     }
 } catch {
     Register-Check -Category $catPorts -Name "Puerto Frontend ($FrontendPort)" -Status "OK" -Details "Verificación de socket completada."

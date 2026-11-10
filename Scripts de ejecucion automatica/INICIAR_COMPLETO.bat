@@ -15,13 +15,26 @@ rem 1. Validar Node.js
 where node >nul 2>nul
 if %ERRORLEVEL% NEQ 0 (
     echo [ERROR] Node.js no está instalado o no se encuentra en el PATH.
-    echo Por favor instale Node.js 20 o superior desde https://nodejs.org/
+    echo Por favor instale Node.js 24 o superior desde https://nodejs.org/
     echo.
     pause
     exit /b 1
 )
 
 rem 2. Validar dependencias en la raíz
+for /f "tokens=1 delims=." %%V in ('node -p "process.versions.node"') do set "NODE_MAJOR=%%V"
+if not defined NODE_MAJOR (
+    echo [ERROR] No se pudo verificar la version de Node.js. Se requiere Node.js 24 o superior.
+    pause
+    exit /b 1
+)
+if %NODE_MAJOR% LSS 24 (
+    echo [ERROR] Se requiere Node.js 24 o superior para --env-file-if-exists.
+    pause
+    exit /b 1
+)
+
+rem 3. Validar dependencias en la raíz
 if not exist "node_modules" (
     echo [INFO] Dependencias no encontradas. Ejecutando npm ci...
     call npm ci

@@ -1,7 +1,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { DatabaseFactory, DatabaseMigrator } from '@automotors/database';
+import { DatabaseFactory, DatabaseMigrator, resolveLocalPgliteDir } from '@automotors/database';
 import { HttpApp } from './infrastructure/http/http-app.ts';
+import { startShutdownControl } from './infrastructure/process/shutdown-control.ts';
 
 const PORT = Number(process.env.PORT || 4000);
 const NODE_ENV = process.env.NODE_ENV || 'development';
@@ -18,14 +19,20 @@ async function bootstrap() {
 
   let db;
   let dataDir: string | undefined;
-  let pool: any;
+  let pool: ReturnType<typeof DatabaseFactory.createPool> | undefined;
 
   // DB_PROVIDER determines persistence strategy:
   // - 'postgres': Connects to native PostgreSQL. If connection fails, execution HALTS immediately with fatal error (no silent fallback).
   // - 'pglite': Uses embedded PGlite WASM engine (default in development/demo environments).
   // - In production (NODE_ENV === 'production'): Always enforces 'postgres'.
   const rawProvider = (process.env.DB_PROVIDER || (NODE_ENV === 'production' ? 'postgres' : 'pglite')).toLowerCase();
+  if (!['postgres', 'postgresql', 'pglite'].includes(rawProvider)) {
+    throw new Error(`Unsupported DB_PROVIDER '${rawProvider}'`);
+  }
   const dbProvider = rawProvider === 'postgres' || rawProvider === 'postgresql' ? 'postgres' : 'pglite';
+  if (NODE_ENV === 'production' && dbProvider !== 'postgres') {
+    throw new Error('Production requires PostgreSQL; DB_PROVIDER=pglite is forbidden');
+  }
 
   if (dbProvider === 'postgres') {
     const poolConfig = process.env.DATABASE_URL
@@ -41,8 +48,9 @@ async function bootstrap() {
     try {
       pool = DatabaseFactory.createPool(poolConfig);
       db = DatabaseFactory.create(pool);
-      await DatabaseMigrator.runMigrations(db);
-      console.log('✅ Connected to native PostgreSQL and applied migrations successfully.');
+      const status = await DatabaseMigrator.status(db);
+      if (!status.ready) throw new Error(`Pending migrations: ${status.pending.join(', ')}. Run npm run db:apply first.`);
+      console.log('✅ Connected to native PostgreSQL; migration ledger is current.');
     } catch (err: unknown) {
       if (pool && typeof pool.end === 'function') {
         try {
@@ -59,14 +67,29 @@ async function bootstrap() {
   } else {
     // PGlite embedded mode for frictionless local development
     const defaultDataDir = NODE_ENV === 'demo' ? './.data/postgres_demo' : './.data/postgres_dev';
-    dataDir = process.env.PG_DATA_DIR || defaultDataDir;
+    dataDir = resolveLocalPgliteDir(process.env.PG_DATA_DIR || defaultDataDir);
+    if (!fs.existsSync(dataDir)) {
+      throw new Error(`PGlite database '${dataDir}' is not prepared. Run npm run db:apply first.`);
+    }
     db = await DatabaseFactory.createInMemoryTestDb(dataDir);
-    await DatabaseMigrator.runMigrations(db);
-    console.log(`✅ Initialized embedded PGlite engine at '${dataDir}' and applied schema.`);
+    try {
+      const status = await DatabaseMigrator.status(db);
+      if (!status.ready) throw new Error(`Pending migrations: ${status.pending.join(', ')}. Run npm run db:apply first.`);
+    } catch (error) {
+      await db.$client.close();
+      const ownerFile = path.join(dataDir, '.owner.pid');
+      if (fs.existsSync(ownerFile) && fs.readFileSync(ownerFile, 'utf8').trim() === String(process.pid)) {
+        fs.unlinkSync(ownerFile);
+      }
+      throw error;
+    }
+    console.log(`✅ Connected to embedded PGlite engine at '${dataDir}'; migration ledger is current.`);
   }
 
   const app = new HttpApp({ db });
   const server = app.createServer();
+  let disposeShutdownControl: (() => Promise<void>) | undefined;
+  let stopping = false;
 
   server.on('error', (err: NodeJS.ErrnoException) => {
     if (err.code === 'EADDRINUSE') {
@@ -74,17 +97,57 @@ async function bootstrap() {
     } else {
       console.error('❌ Server startup error:', err);
     }
-    process.exit(1);
+    process.exitCode = 1;
   });
 
-  server.listen(PORT, HOST, () => {
-    // Record PID for clean process management
+  const gracefulShutdown = async () => {
+    if (stopping) return;
+    stopping = true;
+    console.log('\n🛑 Received shutdown request. Closing server...');
     try {
-      fs.mkdirSync(path.dirname(pidFile), { recursive: true });
-      fs.writeFileSync(pidFile, String(process.pid), 'utf-8');
-    } catch {
-      // non-fatal
+      if (server.listening) {
+        await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+      }
+      if (pool) await pool.end();
+      else await (db as { $client?: { close?: () => Promise<void> } }).$client?.close?.();
+      if (disposeShutdownControl) await disposeShutdownControl();
+
+      if (fs.existsSync(pidFile) && fs.readFileSync(pidFile, 'utf8').trim() === String(process.pid)) {
+        fs.unlinkSync(pidFile);
+      }
+      if (dataDir) {
+        const ownerFile = path.join(dataDir, '.owner.pid');
+        if (fs.existsSync(ownerFile) && fs.readFileSync(ownerFile, 'utf8').trim() === String(process.pid)) {
+          fs.unlinkSync(ownerFile);
+        }
+      }
+      console.log('✅ Server and database connections closed cleanly.');
+    } catch (error) {
+      stopping = false;
+      process.exitCode = 1;
+      console.error('Graceful shutdown failed; process identity was retained for review:', error);
+      throw error;
     }
+  };
+
+  process.on('SIGINT', () => { void gracefulShutdown().catch(() => {}); });
+  process.on('SIGTERM', () => { void gracefulShutdown().catch(() => {}); });
+
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(PORT, HOST, resolve);
+  });
+
+  try {
+    if (process.env.AUTOMOTORS_MANAGED_START === 'true' && NODE_ENV !== 'production') {
+      const controlFile = path.join(process.cwd(), '.run/backend.control.json');
+      fs.mkdirSync(path.dirname(controlFile), { recursive: true });
+      disposeShutdownControl = await startShutdownControl(controlFile, gracefulShutdown);
+    }
+
+    // Record PID for clean process management
+    fs.mkdirSync(path.dirname(pidFile), { recursive: true });
+    fs.writeFileSync(pidFile, String(process.pid), 'utf-8');
 
     if (HOST === '0.0.0.0') {
       console.log(`🚀 Automotors Garage API listening on 0.0.0.0:${PORT} [LAN ACCESS ENABLED]`);
@@ -93,47 +156,10 @@ async function bootstrap() {
       console.log(`🚀 Automotors Garage API listening on http://${HOST}:${PORT} [LOOPBACK ONLY]`);
       console.log(`📋 Health check: http://${HOST}:${PORT}/health/live`);
     }
-  });
-
-  const gracefulShutdown = async () => {
-    console.log('\n🛑 Received shutdown signal. Closing server...');
-    try {
-      if (fs.existsSync(pidFile)) {
-        fs.unlinkSync(pidFile);
-      }
-      if (dataDir) {
-        const ownerFile = path.join(dataDir, '.owner.pid');
-        if (fs.existsSync(ownerFile)) {
-          fs.unlinkSync(ownerFile);
-        }
-      }
-    } catch {
-      // non-fatal
-    }
-
-    try {
-      const client = (db as any)?.$client || (db as any)?.session?.client;
-      if (client?.close) {
-        await client.close();
-        console.log('✅ Database connections closed cleanly.');
-      }
-    } catch {
-      // non-fatal
-    }
-
-    server.close(() => {
-      console.log('✅ Server and sockets closed cleanly.');
-      process.exit(0);
-    });
-
-    // Timeout fallback after 5 seconds
-    setTimeout(() => {
-      process.exit(0);
-    }, 5000).unref();
-  };
-
-  process.on('SIGINT', gracefulShutdown);
-  process.on('SIGTERM', gracefulShutdown);
+  } catch (error) {
+    await gracefulShutdown().catch(() => {});
+    throw error;
+  }
 }
 
 bootstrap().catch((err) => {

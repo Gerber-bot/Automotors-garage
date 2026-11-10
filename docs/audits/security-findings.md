@@ -26,7 +26,7 @@ This security audit evaluates the architecture of Automotors Garage against the 
 - **Root Cause**: Sessions and token blacklists are stored in Node process memory (`new Map<string, Session>()`).
 - **Impact**:
   1. A process restart (e.g. deployment, autoscaling pod restart) wipes all active sessions, disconnecting all users.
-  2. More critically, revoking a compromised token on Pod A does NOT propagate to Pod B in a clustered or containerized setup. A stolen token remains valid on other pods until expiry.
+  2. More critically, revoking a compromised token on one application process does NOT propagate to another in a multi-instance setup. A stolen token remains valid on other processes until expiry.
 - **Remediation**:
   - Replace in-memory Maps with Redis for distributed session validation and token revocation lists.
   - Implement a persistent fallback store in PostgreSQL for session audit history.

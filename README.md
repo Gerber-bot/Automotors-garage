@@ -38,7 +38,7 @@ Antes de comenzar, verifique que su computadora cuente con:
 
 - **Sistema Operativo**: Windows 10 o Windows 11 (64-bit).
 - **PowerShell**: Windows PowerShell 5.1 (incluido por defecto en Windows) o PowerShell 7+.
-- **Node.js**: Versión 20.18.0 o superior (**Node.js 24 recomendado**, validado en CI). Descargar desde [nodejs.org](https://nodejs.org/).
+- **Node.js**: Versión 24.x para los comandos actuales con `--experimental-strip-types` y carga opcional de `.env`. Descargar desde [nodejs.org](https://nodejs.org/).
 - **npm**: Versión 10.x o superior (se instala automáticamente con Node.js).
 - **Git**: Opcional si se descarga como archivo ZIP, recomendado para clonar y sincronizar. Descargar desde [git-scm.com](https://git-scm.com/).
 - **Espacio en disco**: Mínimo 1.5 GB disponibles para dependencias y cachés de compilación.
@@ -78,7 +78,7 @@ AutomotorsGarage/
 │   └── database/
 │       ├── seed-demo.ts               <-- Sembrador determinista de datos de prueba
 │       ├── seed-demo.ps1              <-- Wrapper PowerShell para sembrado
-│       └── verify-postgresql-native.ps1 <-- Verificación aislada para PostgreSQL 16 nativo
+│       └── verify-postgresql-native.ps1 <-- Script con efectos sobre la base; no usar para diagnóstico
 │
 ├── apps/
 │   ├── backend/                       <-- Servidor API REST y lógica de dominio
@@ -96,6 +96,8 @@ AutomotorsGarage/
 ---
 
 ## 4. Guía de Instalación Inicial (Paso a Paso)
+
+Para PostgreSQL nativo y las precauciones de migración, consulte [Desarrollo en Windows sin contenedores](docs/development/environment-setup.md). La preparación del esquema es una operación independiente: el inicio habitual solo debe verificar su estado. Confirme siempre la base de datos antes de preparar una instalación.
 
 Si es la primera vez que descarga o clona Automotors Garage, siga este procedimiento paso a paso:
 
@@ -116,7 +118,7 @@ Abra la carpeta `Scripts de ejecucion automatica` en el Explorador de Windows y 
 
 👉 **`COMPROBAR_ENTORNO.bat`**
 
-Este script no modifica nada. Le indicará claramente qué componentes están listos y qué dependencias faltan por instalar.
+Este script verifica herramientas y rutas sin iniciar servicios ni migrar bases de datos.
 
 ### Paso 4: Instalar Dependencias del Monorepo
 Abra una terminal (PowerShell o CMD) en la raíz del proyecto y ejecute:
@@ -133,12 +135,24 @@ Vuelva a ejecutar:
 
 Verificará que todas las dependencias y enlaces internos del monorepo estén correctamente listos (`[EQUIPO PREPARADO]`).
 
-### Paso 6: Iniciar Automotors Garage
+### Paso 6: Preparar la base de datos una sola vez
+
+Antes del primer inicio, compruebe el destino configurado y prepare **solo una base local nueva y aislada**:
+
+```powershell
+npm run db:status
+npm run db:apply
+npm run db:status
+```
+
+Si la base ya contiene información y no tiene historial de migraciones, no ejecute `db:apply` para adivinar su estado. **`db:adopt` está temporalmente deshabilitado**: preserve la base y solicite revisión manual. Consulte [la guía de preparación](docs/development/environment-setup.md). El inicio diario no aplica ni adopta migraciones.
+
+### Paso 7: Iniciar Automotors Garage
 Haga doble clic en:
 
 👉 **`INICIAR_COMPLETO.bat`**
 
-El sistema iniciará automáticamente la base de datos PGlite, el backend API en el puerto 4000, el frontend Next.js en el puerto 3000 y abrirá su navegador en `http://localhost:3000`.
+Después de la preparación inicial del esquema, el sistema abrirá PGlite en el directorio de datos de esta instalación, iniciará el backend API en el puerto 4000 y el frontend Next.js en el puerto 3000, y abrirá `http://localhost:3000`. Si faltan migraciones, el inicio se detiene sin aplicarlas.
 
 ---
 
@@ -154,6 +168,8 @@ Inicia el sistema completo para desarrollo local:
 - **Backend API REST**: [http://localhost:4000/api/v1](http://localhost:4000/api/v1)
 - **Health Readiness**: [http://localhost:4000/health/ready](http://localhost:4000/health/ready)
 
+El inicio comprueba el estado de las migraciones y de los puertos. Si faltan migraciones o un puerto pertenece a otra aplicación, se detiene y muestra el motivo; **no aplica migraciones ni cierra procesos ajenos**.
+
 *Equivalente por consola:* `npm run dev`
 
 ### Botón 2: Iniciar en Modo Red Local / Celular (`INICIAR_COMPLETO_MODO_LAN.bat`)
@@ -168,7 +184,7 @@ Permite probar la aplicación desde su teléfono celular o tablet conectado a la
 *Equivalente por consola:* `npm run dev:lan`
 
 ### Botón 3: Detener Servicios (`DETENER_AUTOMOTORS.bat`)
-Apaga ordenadamente los procesos de frontend y backend, libera los puertos 3000 y 4000, y remueve los archivos PID temporales sin tocar sus datos guardados ni los archivos de logs.
+Solicita el apagado de los procesos de frontend y backend **solo después de verificar que pertenecen a esta instalación**. Conserva los datos y registros; si la identidad no coincide, no termina procesos ajenos.
 
 *Equivalente por consola:* `npm run dev:stop`
 
@@ -202,8 +218,8 @@ Realiza una auditoría visual no destructiva de su sistema en cualquier momento 
 | **Node.js no está instalado** | Node.js no se instaló o no se agregó al PATH. | Descargue e instale Node.js 24 LTS desde [nodejs.org](https://nodejs.org/) y reinicie la terminal. |
 | **npm no se reconoce como comando** | Instalación incompleta de Node.js. | Reinstale Node.js verificando que la opción "npm package manager" esté habilitada. |
 | **Dependencias faltantes (`node_modules`)** | No se ejecutó la instalación inicial. | Ejecute `npm ci` desde la raíz del repositorio. |
-| **Puerto 4000 o 3000 ocupado (`EADDRINUSE`)** | Otra instancia de Automotors u otra aplicación está usando el puerto. | Ejecute `DETENER_AUTOMOTORS.bat` (o `npm run dev:stop`). Si es otra aplicación, ciérrela o cambie el puerto en `.env`. |
-| **Backend no responde (`/health/ready`)** | Cierre abrupto previo dejó un archivo `.run/server.pid` huérfano. | Ejecute `DETENER_AUTOMOTORS.bat` y vuelva a iniciar. El sistema autorepara bloqueos huérfanos de forma segura. |
+| **Puerto 4000 o 3000 ocupado (`EADDRINUSE`)** | Otra instancia u otra aplicación usa el puerto. | Compruebe quién lo ocupa antes de actuar. El lanzador de esta copia no debe cerrar procesos ajenos. |
+| **Backend no responde (`/health/ready`)** | Un cierre abrupto anterior pudo dejar un registro de proceso inactivo o una base sin preparar. | Ejecute `DETENER_AUTOMOTORS.bat`: descarta solo registros cuyo proceso ya no existe y no fuerza procesos ajenos. Luego revise `npm run db:status` antes de reiniciar. |
 | **Frontend no compila o error de `readlink` / `ENOENT`** | El proyecto está dentro de OneDrive y compite por bloqueos de archivos. | Pause la sincronización de OneDrive temporalmente o mueva el proyecto a una ruta no sincronizada (ej. `C:\Proyectos\AutomotorsGarage`). |
 | **No se puede acceder desde el celular en modo LAN** | El firewall de Windows bloquea conexiones entrantes en el perfil 'Público'. | Asegúrese de que su red Wi-Fi esté configurada como **"Red Privada"** en Windows. En PowerShell como administrador puede habilitar el puerto: `New-NetFirewallRule -DisplayName 'Automotors Dev LAN' -Direction Inbound -LocalPort 3000,4000 -Protocol TCP -Profile Private -Action Allow`. |
 | **Error de script deshabilitado en PowerShell** | La política de ejecución de Windows restringe scripts `.ps1`. | Los archivos `.bat` ya ejecutan PowerShell con `-ExecutionPolicy Bypass`. Para ejecutar scripts manualmente, configure: `Set-ExecutionPolicy RemoteSigned -Scope CurrentUser`. |
@@ -224,12 +240,14 @@ npm run typecheck
 # Verificación de calidad de código con ESLint
 npm run lint
 
-# Batería completa de pruebas automatizadas (156 pruebas en 19 suites)
+# Batería completa de pruebas automatizadas (incluye seguridad y migraciones)
 npm test
 
 # Compilación productiva de Next.js
 npm run build
 
-# Sembrado de datos de demostración
+# Sembrado: requiere destino PGlite desechable preparado y confirmación explícita
 npm run seed:demo
 ```
+
+El sembrado es una operación separada: solo acepta PGlite local, `PG_DATA_DIR` explícito y `DEMO_SEED_ACK=I_CONFIRM_DISPOSABLE_LOCAL_DATA`. Las conexiones externas están deshabilitadas. Consulte la [preparación de datos demo](docs/development/environment-setup.md); no lo utilice como inicio habitual ni para recuperar datos.

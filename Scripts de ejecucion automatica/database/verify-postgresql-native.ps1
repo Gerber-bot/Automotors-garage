@@ -85,7 +85,7 @@ const config = {
   host: process.env.PG_HOST || '$HostName',
   port: Number(process.env.PG_PORT || $Port),
   user: process.env.PG_USER || '$User',
-  password: process.env.PG_PASSWORD || '$Password',
+  password: process.env.PG_PASSWORD,
   database: '$DatabaseName',
   connectionTimeoutMillis: 5000,
 };
@@ -181,7 +181,7 @@ try {
         Write-Host "CONCLUSION: PostgreSQL nativo verificado y listo para usar." -ForegroundColor Green
         Write-Host "Para iniciar Automotors Garage con este motor, configure en su .env:"
         Write-Host "  DB_PROVIDER=postgres"
-        Write-Host "  DATABASE_URL=postgresql://$User`:$Password@$HostName`:$Port/$DatabaseName"
+        Write-Host "  Configure DATABASE_URL privately for the verified host and database; do not print credentials."
         exit 0
     } else {
         Write-Host ""

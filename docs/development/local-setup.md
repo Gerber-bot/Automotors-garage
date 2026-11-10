@@ -2,6 +2,8 @@
 
 This guide describes how to configure and run **Automotors Garage** on a local development workstation running Windows with PowerShell.
 
+Before the first launch, follow [Windows development without containers](environment-setup.md) to explicitly prepare the database. The regular start scripts verify the migration state; they must not apply pending migrations.
+
 ---
 
 ## 1. Prerequisites
@@ -10,7 +12,7 @@ Before starting, ensure your system meets the following requirements:
 
 | Tool | Minimum Version | Recommended Version | Purpose |
 | :--- | :--- | :--- | :--- |
-| **Node.js** | `>= 20.18.0` | `22.x` or `24.x` | JavaScript runtime with `--experimental-strip-types` support |
+| **Node.js** | `24.x` | `24.x` | JavaScript runtime with `--experimental-strip-types` and optional `.env` loading |
 | **npm** | `>= 10.0.0` | `11.x` | Monorepo package management |
 | **PowerShell** | `5.1` (Desktop) | `7.x` (Core) | Execution environment for development automation scripts |
 | **Git** | `2.30+` | Latest | Version control |

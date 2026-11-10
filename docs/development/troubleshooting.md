@@ -20,7 +20,7 @@ Error: listen EADDRINUSE: address already in use 0.0.0.0:4000
 An earlier instance of Node.js or another service is already listening on port 4000.
 
 ### Resolution
-1. Run the safe stopping script to release the port:
+1. Confirm which installation owns the port. If this installation has a verified process record, use its stopping script:
    ```powershell
    powershell -ExecutionPolicy Bypass -File "Scripts de ejecucion automatica/powershell/automotors.ps1" -Action STOP
    ```
@@ -28,7 +28,7 @@ An earlier instance of Node.js or another service is already listening on port 4
    ```bash
    npm run dev:stop
    ```
-2. If another application occupies port 4000, specify an alternative port:
+2. If another application owns the port, do not stop it with this installation's script. Coordinate with its owner or choose a free port for this installation:
    ```powershell
    powershell -ExecutionPolicy Bypass -File "Scripts de ejecucion automatica/powershell/automotors.ps1" -Action START -BackendPort 4001
    ```
@@ -49,22 +49,15 @@ Embedded PostgreSQL (PGlite) uses a `postmaster.pid` lock file and requires writ
 ### Resolution
 The repository follows a strict **fail-safe data protection policy**:
 - `DatabaseFactory` checks for `postmaster.pid` and actively verifies whether the recorded PID is currently running in the operating system. If an active process holds the lock, execution halts immediately with `[CRITICAL_DATA_PROTECTION]` to avoid concurrent write corruption.
-- Only when the PID is definitively proven inactive (dead process from crash/power cut) is the stale lockfile safely removed.
+- Do not assume a stale-looking PID proves that a directory is unused; inspect the process and retain the data for recovery.
 - **No silent destructive recovery**: If persistent storage files are corrupted, the engine halts immediately and preserves all existing files untouched. No data directories are ever automatically wiped.
-- Manual recovery steps (only after backing up existing data):
-  ```powershell
-  # 1. Ensure all node processes are stopped
-  npm run dev:stop
+- Manual recovery: stop only processes verified as belonging to this installation, preserve `.data/postgres_dev`, and take an external backup before investigating a lock or corruption. Do not delete the data directory or run the demo seeder as a recovery shortcut.
 
-  # 2. Back up existing data
-  Copy-Item -Recurse .data/postgres_dev .data/postgres_dev_backup
+### Exclusive claim (`.automotors.lock`)
 
-  # 3. If an explicit clean state is desired for development:
-  Remove-Item -Recurse -Force .data/postgres_dev
+Each PGlite directory is claimed atomically before the engine opens it, so two independent processes cannot initialize the same files simultaneously. The claim is removed only after a clean `close()`.
 
-  # 4. If re-seeding the demo environment:
-  npm run seed:demo
-  ```
+If startup reports `[CRITICAL_DATA_PROTECTION] PGlite directory is already claimed or requires manual review`, the previous process either is still running or ended without closing cleanly. Confirm with the process identity recorded in the file (`pid`) and this installation's process records; if that PID no longer exists and no other process uses the directory, back up the directory, remove only `.automotors.lock`, and retry. Never remove the claim while a process may still be running, and never delete the data directory to bypass it.
 
 ---
 
@@ -82,7 +75,7 @@ Windows PowerShell default execution policy is set to `Restricted`.
 ### Resolution
 Always include `-ExecutionPolicy Bypass` when invoking scripts:
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/start-dev.ps1
+powershell -ExecutionPolicy Bypass -File "Scripts de ejecucion automatica/powershell/automotors.ps1" -Action START
 ```
 Or set execution policy for the current user once:
 ```powershell

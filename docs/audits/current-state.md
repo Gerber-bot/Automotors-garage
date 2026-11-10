@@ -37,7 +37,7 @@ Each system component is classified under one of the following canonical states:
 | **Frontend: API Client** | `apps/frontend/src/api/client.ts` | `PARTIALLY_IMPLEMENTED` | Yes | Session token management, 401 detection; offline mock fallback present. |
 | **Database Persistence (PostgreSQL + Drizzle)** | `packages/database/` | `MISSING` | No | Schema migrations, connection pooling, and ACID transactions pending Milestone 07. |
 | **Distributed Cache & Session Store (Redis)** | `packages/cache/` | `MISSING` | No | Distributed session invalidation and global rate limiting pending Milestone 08. |
-| **Infrastructure / DevOps (Docker & CI/CD)** | Root / `.github/` | `MISSING` | No | Container definitions and GitHub Actions workflows pending Milestone 09. |
+| **Infrastructure / DevOps (historical snapshot)** | Root / `.github/` | `MISSING` | No | At the time of this audit, CI and native-service deployment automation were pending; see the current environment setup for the present state. |
 
 ---
 

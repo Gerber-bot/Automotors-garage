@@ -12,6 +12,7 @@ echo =======================================================
 echo.
 
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%powershell\automotors.ps1" -Action STOP
+set "STOP_EXIT=%ERRORLEVEL%"
 if %ERRORLEVEL% NEQ 0 (
     echo.
     echo [ADVERTENCIA] La detención reportó advertencias.
@@ -20,4 +21,4 @@ if %ERRORLEVEL% NEQ 0 (
 
 echo Presione cualquier tecla para cerrar esta ventana...
 pause >nul
-exit /b 0
+exit /b %STOP_EXIT%

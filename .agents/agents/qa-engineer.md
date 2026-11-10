@@ -17,7 +17,7 @@
 
 ## Architectural & Testing Rules
 1. Unit tests must be hermetic, fast, and deterministic without external network dependencies.
-2. Integration tests must use ephemeral test databases (Docker/testcontainers) or transaction rollback strategies.
+2. Integration tests must use isolated PGlite databases, disposable native PostgreSQL instances, or transaction rollback strategies; never target persistent application data.
 3. Test mocks must be explicitly named (e.g., `MockWorkshopRepository`) and adhere to domain interfaces.
 4. E2E tests must clean up created state after execution.
 5. Critical domain rules (e.g., invoice balance calculations, status transitions) require 100% branch test coverage.

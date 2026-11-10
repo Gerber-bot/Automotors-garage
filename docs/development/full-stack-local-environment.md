@@ -2,7 +2,7 @@
 
 ## Overview & Architecture
 
-Automotors Garage provides an integrated local Full Stack development environment for Windows. It orchestrates the **NestJS modular backend** (with embedded PostgreSQL PGlite persistence) on port `4000` and the **Next.js 15 commercial SaaS frontend** on port `3000` simultaneously, maintaining strict multi-tenant isolation, same-origin API proxying, and PID tracking.
+Automotors Garage provides an integrated local development environment for Windows. It orchestrates the **Node.js backend API** (with embedded PGlite persistence in development) on port `4000` and the **Next.js 15 frontend** on port `3000`, with same-origin API proxying and per-installation process tracking. The database must be prepared explicitly before the first launch; startup must not apply migrations.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
@@ -86,9 +86,11 @@ To avoid Cross-Origin Resource Sharing (CORS) complications and maintain cookie/
 
 ## 4. Process Tracking & Log Diagnostics
 
-Every service registers its operating system process ID inside the `.run/` directory:
-- Backend: `.run/server.pid`
-- Frontend: `.run/frontend.pid`
+The managed Windows launcher records each process in `.run/`:
+- Backend identity: `.run/backend.process.json`
+- Frontend identity: `.run/frontend.process.json`
+
+These records include the installation root and process creation time; a PID alone is **not** proof of ownership. Local shutdown controls live in `.run/*.control.json`; keep this directory private. If an identity cannot be verified, the launcher must leave the process alone rather than using a port number as permission to stop it.
 
 Log streams are output to `.logs/`:
 - `server_dev.log` / `server_dev.err.log`: Backend console output, route logs, and PGlite initialization.
@@ -104,7 +106,7 @@ Get-Content .logs/server_dev.log -Wait
 
 ## 5. Mobile & LAN Access
 
-When invoking `start-stack.ps1 -LAN`:
+When invoking `INICIAR_COMPLETO_MODO_LAN.bat`:
 1. The script identifies the host machine's private IPv4 address on the active network adapter (e.g., `192.168.1.50`).
 2. Both backend and frontend bind to `0.0.0.0`.
 3. Open mobile Safari / Chrome on any phone connected to the same Wi-Fi network and navigate to:
@@ -117,7 +119,7 @@ When invoking `start-stack.ps1 -LAN`:
 
 | Issue | Root Cause | Solution |
 | :--- | :--- | :--- |
-| **Port 3000 or 4000 already occupied** | A previous Node instance is lingering or another application is using the port. | Run `DETENER_STACK_COMPLETO.bat` or `powershell -File scripts/stop-stack.ps1 -Force`. |
+| **Port 3000 or 4000 already occupied** | This instance or another application is using the port. | Inspect the process owner before changing ports; never stop another installation to free a port. |
 | **Next.js returns 500 when calling `/api/v1`** | The backend on port 4000 is not running. | Verify backend health at `http://127.0.0.1:4000/health/ready`. |
-| **PostgreSQL PGlite database lock** | Dirty shutdown left unreleased lock in `.data/postgres_dev`. | Check for running node processes using `scripts/stop-dev.ps1`. The engine features fail-safe recovery. |
+| **PGlite database lock** | Another process may be using this installation's data directory. | Do not delete lock files or data; inspect the owning process and use this installation's shutdown script only after verifying its identity. |
 | **Mobile device cannot connect via Wi-Fi** | Windows Firewall is blocking incoming connections on port 3000 or 4000. | Allow inbound TCP traffic for Node.js in Windows Defender Firewall for Private Networks. |
