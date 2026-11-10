@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import { DatabaseFactory, DatabaseMigrator, resolveLocalPgliteDir } from '@automotors/database';
 import { HttpApp } from './infrastructure/http/http-app.ts';
 import { startShutdownControl } from './infrastructure/process/shutdown-control.ts';
+import { resolvePostgresPoolConfig } from './infrastructure/database/postgres-config.ts';
 
 const PORT = Number(process.env.PORT || 4000);
 const NODE_ENV = process.env.NODE_ENV || 'development';
@@ -35,15 +36,7 @@ async function bootstrap() {
   }
 
   if (dbProvider === 'postgres') {
-    const poolConfig = process.env.DATABASE_URL
-      ? { connectionString: process.env.DATABASE_URL }
-      : {
-          host: process.env.DATABASE_HOST || process.env.POSTGRES_HOST || 'localhost',
-          port: Number(process.env.DATABASE_PORT || process.env.POSTGRES_PORT || 5432),
-          user: process.env.DATABASE_USER || process.env.POSTGRES_USER || 'postgres',
-          password: process.env.DATABASE_PASSWORD || process.env.POSTGRES_PASSWORD || 'postgres',
-          database: process.env.DATABASE_NAME || process.env.POSTGRES_DB || 'automotors_garage',
-        };
+    const poolConfig = resolvePostgresPoolConfig(process.env, NODE_ENV);
 
     try {
       pool = DatabaseFactory.createPool(poolConfig);

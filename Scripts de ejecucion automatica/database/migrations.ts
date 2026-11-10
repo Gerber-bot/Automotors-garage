@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import { DatabaseFactory, DatabaseMigrator, resolveLocalPgliteDir } from '@automotors/database';
+import { resolvePostgresPoolConfig } from '../../apps/backend/src/infrastructure/database/postgres-config.ts';
 
 const operation = process.argv[2];
 if (operation !== 'status' && operation !== 'apply' && operation !== 'adopt') {
@@ -36,15 +37,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const pool = DatabaseFactory.createPool(process.env.DATABASE_URL
-    ? { connectionString: process.env.DATABASE_URL }
-    : {
-        host: process.env.DATABASE_HOST || process.env.POSTGRES_HOST || 'localhost',
-        port: Number(process.env.DATABASE_PORT || process.env.POSTGRES_PORT || 5432),
-        user: process.env.DATABASE_USER || process.env.POSTGRES_USER || 'postgres',
-        password: process.env.DATABASE_PASSWORD || process.env.POSTGRES_PASSWORD || 'postgres',
-        database: process.env.DATABASE_NAME || process.env.POSTGRES_DB || 'automotors_garage',
-      });
+  const pool = DatabaseFactory.createPool(resolvePostgresPoolConfig(process.env, env));
   try {
     const db = DatabaseFactory.create(pool);
     const status = operation === 'apply' ? await DatabaseMigrator.apply(db) : await DatabaseMigrator.status(db);
