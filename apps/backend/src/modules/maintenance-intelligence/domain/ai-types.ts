@@ -57,3 +57,77 @@ export interface AIStatus {
   model: string;
   message: string;
 }
+
+// ============================================================================
+// AUTOMOTORS AI CORE — PREVENTIVE MAINTENANCE CONSULTATION CONTRACTS
+// ============================================================================
+
+export const AiEvidenceSourceSchema = z.object({
+  sourceType: z.enum([
+    'VEHICLE_PROFILE',
+    'MAINTENANCE_HISTORY',
+    'KNOWLEDGE_BASE_RULE',
+    'DETERMINISTIC_ENGINE',
+  ]),
+  sourceId: z.string(),
+  title: z.string(),
+  verificationStatus: z.enum([
+    'VERIFIED',
+    'CERTIFIED_WORKSHOP',
+    'OWNER_DECLARED',
+    'PENDING_VERIFICATION',
+    'DETERMINISTIC',
+  ]),
+  citation: z.string(),
+  summary: z.string(),
+});
+export type AiEvidenceSource = z.infer<typeof AiEvidenceSourceSchema>;
+
+export const PreventiveConsultationSynthesisSchema = z.object({
+  answer: z.string().min(10),
+  confirmedFacts: z.array(z.string()),
+  inferences: z.array(z.string()),
+  unknownOrMissingData: z.array(z.string()),
+});
+export type PreventiveConsultationSynthesis = z.infer<typeof PreventiveConsultationSynthesisSchema>;
+
+export const PreventiveConsultationResponseSchema = z.object({
+  vehicleId: z.string(),
+  vehicleSummary: z.string(),
+  category: z.string(),
+  categoryLabel: z.string(),
+  question: z.string(),
+  deterministicCalculation: z.object({
+    status: z.string(),
+    nextDueMileage: z.number().nullable(),
+    remainingKm: z.number().nullable(),
+    nextDueDate: z.string().nullable(),
+    estimatedDaysRemaining: z.number().nullable(),
+    dueReason: z.string(),
+    confidence: z.string(),
+    intervalSource: z.string(),
+    sourceCitation: z.string().nullable(),
+    ruleVerificationStatus: z.string().nullable(),
+    warning: z.string().nullable(),
+  }),
+  answer: z.string(),
+  confirmedFacts: z.array(z.string()),
+  inferences: z.array(z.string()),
+  unknownOrMissingData: z.array(z.string()),
+  sources: z.array(AiEvidenceSourceSchema),
+  toolsInvoked: z.array(z.string()),
+  privacy: z.object({
+    mode: z.enum(['EXTERNAL_AI_ASSISTED', 'DETERMINISTIC_FALLBACK']),
+    externalProviderConfigured: z.boolean(),
+    externalConsentGranted: z.boolean(),
+    externalProviderUsed: z.boolean(),
+    dataMinimizationApplied: z.literal(true),
+    piiSentToExternalProvider: z.literal(false),
+    providerName: z.string(),
+    fallbackReason: z.string().nullable(),
+  }),
+  disclaimer: z.string(),
+  generatedAt: z.string(),
+});
+export type PreventiveConsultationResponse = z.infer<typeof PreventiveConsultationResponseSchema>;
+

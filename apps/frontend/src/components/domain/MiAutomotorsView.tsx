@@ -41,6 +41,7 @@ import {
 import type {
   HistorySummary,
   MaintenanceExplanation,
+  PreventiveConsultationResponse,
   KbConfiguration,
   KbTechnicalSpec,
   KbMaintenanceRule,
@@ -175,6 +176,39 @@ export function MiAutomotorsView() {
     }
   };
 
+  // Automotors AI Core: Preventive Maintenance Consultation
+  const [consultCategory, setConsultCategory] = React.useState<string>('OIL_AND_FILTER');
+  const [consultQuestion, setConsultQuestion] = React.useState<string>('');
+  const [consultAllowExternalAi, setConsultAllowExternalAi] = React.useState<boolean>(false);
+  const [consultationResult, setConsultationResult] =
+    React.useState<PreventiveConsultationResponse | null>(null);
+  const [isLoadingConsultation, setIsLoadingConsultation] = React.useState<boolean>(false);
+  const [consultationError, setConsultationError] = React.useState<string | null>(null);
+
+  const handleRunPreventiveConsultation = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!selectedVehicleId) return;
+    setIsLoadingConsultation(true);
+    setConsultationError(null);
+    try {
+      const res = await apiClient.consultOwnerPreventiveMaintenance(selectedVehicleId, {
+        category: consultCategory,
+        question: consultQuestion.trim() || undefined,
+        allowExternalAi: consultAllowExternalAi,
+        privacyConsent: consultAllowExternalAi,
+      });
+      setConsultationResult(res);
+    } catch (err: unknown) {
+      setConsultationError(
+        err instanceof Error
+          ? err.message
+          : 'No se pudo procesar la consulta preventiva para este vehículo.'
+      );
+    } finally {
+      setIsLoadingConsultation(false);
+    }
+  };
+
   React.useEffect(() => {
     if (user) {
       setProfFullName(user.fullName || '');
@@ -241,6 +275,8 @@ export function MiAutomotorsView() {
   }, [loadVehicles]);
 
   React.useEffect(() => {
+    setConsultationResult(null);
+    setConsultationError(null);
     if (selectedVehicleId) {
       void loadVehicleDetails(selectedVehicleId);
     } else {
@@ -1270,7 +1306,247 @@ export function MiAutomotorsView() {
                 />
               </Card>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              <>
+                {/* AUTOMOTORS AI CORE: PREVENTIVE MAINTENANCE CONSULTATION PANEL */}
+                <Card className="bg-slate-900/95 border-slate-800 p-4 sm:p-5 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Sparkles className="h-4 w-4 text-emerald-400" />
+                        <h3 className="text-sm sm:text-base font-bold text-white">
+                          Automotors AI — Consulta Preventiva Fundamentada
+                        </h3>
+                        <Badge variant="info" size="sm">
+                          Solo Lectura · Motor Determinista + Evidencias
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-slate-400">
+                        Consultá el estado preventivo de un rubro mecánico con trazabilidad explícita entre datos confirmados, estimaciones e información faltante.
+                      </p>
+                    </div>
+                  </div>
+
+                  <form onSubmit={handleRunPreventiveConsultation} className="space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label
+                          htmlFor="ai-consult-category"
+                          className="block text-xs font-semibold text-slate-300 mb-1"
+                        >
+                          Rubro de Mantenimiento
+                        </label>
+                        <select
+                          id="ai-consult-category"
+                          value={consultCategory}
+                          onChange={(e) => setConsultCategory(e.target.value)}
+                          className="w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-xs text-slate-100"
+                        >
+                          <option value="OIL_AND_FILTER">Aceite y Filtro de Motor</option>
+                          <option value="AIR_AND_CABIN_FILTERS">Filtros de Aire y Habitáculo</option>
+                          <option value="BRAKES">Sistema de Frenos</option>
+                          <option value="SPARK_PLUGS">Bujías de Encendido</option>
+                          <option value="COOLANT">Líquido Refrigerante</option>
+                          <option value="TIMING_BELT">Sistema de Distribución (Cadena / Correa)</option>
+                          <option value="GENERAL_INSPECTION">Inspección Multipunto General</option>
+                        </select>
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <label
+                          htmlFor="ai-consult-question"
+                          className="block text-xs font-semibold text-slate-300 mb-1"
+                        >
+                          Consulta puntual (opcional)
+                        </label>
+                        <Input
+                          id="ai-consult-question"
+                          placeholder="Ej: ¿Cuándo corresponde el próximo servicio y en qué registros se basa?"
+                          value={consultQuestion}
+                          onChange={(e) => setConsultQuestion(e.target.value)}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+                      <label className="flex items-start gap-2 text-xs text-slate-300 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={consultAllowExternalAi}
+                          onChange={(e) => setConsultAllowExternalAi(e.target.checked)}
+                          className="mt-0.5 rounded border-slate-700 bg-slate-950 text-emerald-500"
+                        />
+                        <span>
+                          Autorizo asistencia de proveedor externo de IA con contexto técnico minimizado (sin datos personales, patente, VIN ni notas privadas). Si no está configurado, se utiliza la explicación determinista local.
+                        </span>
+                      </label>
+
+                      <Button
+                        type="submit"
+                        variant="primary"
+                        size="sm"
+                        isLoading={isLoadingConsultation}
+                        leftIcon={<BookOpen className="h-3.5 w-3.5" />}
+                      >
+                        Consultar Mantenimiento
+                      </Button>
+                    </div>
+                  </form>
+
+                  {isLoadingConsultation && (
+                    <LoadingState label="Verificando permisos, historial, reglas técnicas y cálculo determinista..." />
+                  )}
+
+                  {consultationError && (
+                    <div
+                      role="alert"
+                      className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2"
+                    >
+                      <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0" />
+                      <span>{consultationError}</span>
+                    </div>
+                  )}
+
+                  {!isLoadingConsultation && consultationResult && (
+                    <div className="space-y-3.5 pt-2 border-t border-slate-800/80 text-xs">
+                      <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-xl bg-slate-950 border border-slate-800">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-white">
+                            {consultationResult.categoryLabel}
+                          </span>
+                          <Badge
+                            variant={
+                              consultationResult.deterministicCalculation.status === 'OVERDUE' ||
+                              consultationResult.deterministicCalculation.status === 'DUE_NOW'
+                                ? 'danger'
+                                : consultationResult.deterministicCalculation.status === 'UPCOMING_SOON'
+                                  ? 'warning'
+                                  : consultationResult.deterministicCalculation.status ===
+                                      'INSUFFICIENT_DATA'
+                                    ? 'secondary'
+                                    : 'success'
+                            }
+                            size="sm"
+                          >
+                            {consultationResult.deterministicCalculation.status}
+                          </Badge>
+                          <Badge variant="secondary" size="sm">
+                            Confianza: {consultationResult.deterministicCalculation.confidence}
+                          </Badge>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <Badge
+                            variant={
+                              consultationResult.privacy.mode === 'EXTERNAL_AI_ASSISTED'
+                                ? 'success'
+                                : 'secondary'
+                            }
+                            size="sm"
+                          >
+                            {consultationResult.privacy.mode === 'EXTERNAL_AI_ASSISTED'
+                              ? 'IA ASISTIDA (MINIMIZADA)'
+                              : 'MODO DETERMINISTA LOCAL'}
+                          </Badge>
+                          <span className="font-mono text-[11px] text-slate-400">
+                            {consultationResult.privacy.providerName}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Respuesta Explicativa Principal */}
+                      <div className="p-3.5 rounded-xl bg-slate-950/90 border border-slate-800 text-slate-200 leading-relaxed">
+                        {consultationResult.answer}
+                      </div>
+
+                      {/* Distinción Estricta: Datos Confirmados vs Inferencias vs Información Faltante */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div className="p-3 rounded-xl bg-emerald-950/15 border border-emerald-500/30 space-y-1.5">
+                          <span className="font-bold text-emerald-300 flex items-center gap-1.5">
+                            <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                            Datos Confirmados ({consultationResult.confirmedFacts.length})
+                          </span>
+                          <ul className="list-disc list-inside space-y-1 text-[11px] text-slate-300">
+                            {consultationResult.confirmedFacts.map((fact, idx) => (
+                              <li key={idx}>{fact}</li>
+                            ))}
+                          </ul>
+                        </div>
+
+                        <div className="p-3 rounded-xl bg-sky-950/15 border border-sky-500/30 space-y-1.5">
+                          <span className="font-bold text-sky-300 flex items-center gap-1.5">
+                            <Clock className="h-3.5 w-3.5 shrink-0" />
+                            Inferencias y Proyecciones ({consultationResult.inferences.length})
+                          </span>
+                          {consultationResult.inferences.length === 0 ? (
+                            <p className="text-[11px] text-slate-400 italic">
+                              No se realizaron inferencias adicionales por falta de regla verificada.
+                            </p>
+                          ) : (
+                            <ul className="list-disc list-inside space-y-1 text-[11px] text-slate-300">
+                              {consultationResult.inferences.map((inf, idx) => (
+                                <li key={idx}>{inf}</li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+
+                        <div className="p-3 rounded-xl bg-amber-950/15 border border-amber-500/30 space-y-1.5">
+                          <span className="font-bold text-amber-300 flex items-center gap-1.5">
+                            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                            Información Faltante o No Confirmada (
+                            {consultationResult.unknownOrMissingData.length})
+                          </span>
+                          <ul className="list-disc list-inside space-y-1 text-[11px] text-slate-300">
+                            {consultationResult.unknownOrMissingData.map((missing, idx) => (
+                              <li key={idx}>{missing}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+
+                      {/* Fuentes y Evidencias Verificables */}
+                      <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+                        <span className="font-bold text-slate-200 block">
+                          Fuentes y Evidencias Utilizadas ({consultationResult.sources.length})
+                        </span>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {consultationResult.sources.map((src, idx) => (
+                            <div
+                              key={`${src.sourceId}-${idx}`}
+                              className="p-2.5 rounded-lg bg-slate-900 border border-slate-800/90 space-y-1"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-semibold text-white truncate">
+                                  {src.title}
+                                </span>
+                                <Badge variant="secondary" size="sm">
+                                  {src.verificationStatus}
+                                </Badge>
+                              </div>
+                              <p className="text-[11px] text-slate-300">{src.summary}</p>
+                              <p className="text-[10px] font-mono text-slate-500 truncate">
+                                Fuente: {src.citation}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Trazabilidad de Herramientas Read-Only y Descargo */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-slate-400 pt-1">
+                        <span>
+                          Herramientas de solo lectura ejecutadas:{' '}
+                          <code className="text-slate-300">
+                            {consultationResult.toolsInvoked.join(' → ')}
+                          </code>
+                        </span>
+                        <span>PII enviada a terceros: 0 bytes</span>
+                      </div>
+                    </div>
+                  )}
+                </Card>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                 {predictionsData.predictions.map((pred) => {
                   const isInsufficient = pred.status === 'INSUFFICIENT_DATA';
                   const isOverdue = pred.status === 'OVERDUE' || pred.status === 'DUE_NOW';
@@ -1394,7 +1670,8 @@ export function MiAutomotorsView() {
                     </Card>
                   );
                 })}
-              </div>
+                </div>
+              </>
             )}
           </div>
         )}

@@ -50,6 +50,11 @@ import { ilike, and } from 'drizzle-orm';
 import { SummarizeHistoryUseCase } from '../../modules/maintenance-intelligence/application/summarize-history.usecase.ts';
 import { ExplainMaintenanceUseCase } from '../../modules/maintenance-intelligence/application/explain-maintenance.usecase.ts';
 import { InterpretObd2UseCase } from '../../modules/maintenance-intelligence/application/interpret-obd2.usecase.ts';
+import {
+  PreventiveConsultationUseCase,
+  AiResourceNotFoundError,
+  AiAccessDeniedError,
+} from '../../modules/maintenance-intelligence/application/preventive-consultation.usecase.ts';
 import { OpenAIAIAdapter } from '../../modules/maintenance-intelligence/adapters/openai-ai.adapter.ts';
 import type { AIProviderPort } from '../../modules/maintenance-intelligence/ports/ai-provider.port.ts';
 import type { StructuredExtractionPort } from '../../modules/maintenance-intelligence/ports/structured-extraction.port.ts';
@@ -105,6 +110,7 @@ export class HttpApp {
   private readonly aiProvider: AIProviderPort & StructuredExtractionPort;
   private readonly summarizeHistoryUseCase: SummarizeHistoryUseCase;
   private readonly explainMaintenanceUseCase: ExplainMaintenanceUseCase;
+  private readonly preventiveConsultationUseCase: PreventiveConsultationUseCase;
   private readonly obd2UseCase: InterpretObd2UseCase;
   private readonly obdService: ObdDiagnosticsService;
 
@@ -190,6 +196,14 @@ export class HttpApp {
       });
     this.summarizeHistoryUseCase = new SummarizeHistoryUseCase(this.aiProvider);
     this.explainMaintenanceUseCase = new ExplainMaintenanceUseCase(this.aiProvider);
+    this.preventiveConsultationUseCase = new PreventiveConsultationUseCase({
+      db: this.db,
+      vehicleRepo: this.vehicleRepo,
+      historyRepo: this.historyRepo,
+      kbRepo: this.kbRepo,
+      techIdentificationEngine: this.techIdentificationEngine,
+      aiProvider: this.aiProvider,
+    });
     this.obd2UseCase = new InterpretObd2UseCase(this.aiProvider);
     this.obdService = new ObdDiagnosticsService();
   }
@@ -1851,6 +1865,38 @@ export class HttpApp {
           return this.sendJson(res, 200, explainResult.getValue(), requestId);
         }
 
+        // OWNER AUTOMOTORS AI CORE: PREVENTIVE MAINTENANCE CONSULTATION (/api/v1/owner/vehicles/:id/ai/preventive-consultation)
+        const ownerAiConsultMatch = pathname.match(
+          /^\/api\/v1\/owner\/vehicles\/([^/]+)\/ai\/preventive-consultation$/
+        );
+        if (ownerAiConsultMatch && method === 'POST') {
+          const vehicleId = ownerAiConsultMatch[1]!;
+          const body = await this.parseBody(req);
+          const allowExternalAi = body.allowExternalAi === true;
+          const privacyConsent = body.privacyConsent === true;
+
+          const consultResult = await this.preventiveConsultationUseCase.execute({
+            context: {
+              actorUserId: principal.id,
+              actorScope: 'VEHICLE_OWNER',
+              workshopId: null,
+              permissions: ['OWNER_PORTAL_ACCESS', 'READ', 'CALCULATE_PREVENTIVE'],
+              targetVehicleId: vehicleId,
+              externalConsentGranted: allowExternalAi && privacyConsent,
+            },
+            category: typeof body.category === 'string' ? body.category : undefined,
+            question: typeof body.question === 'string' ? body.question : undefined,
+            allowExternalAi,
+            privacyConsent,
+          });
+
+          if (consultResult.isFailure) {
+            return this.sendJson(res, 400, { error: consultResult.getError() }, requestId);
+          }
+
+          return this.sendJson(res, 200, consultResult.getValue(), requestId);
+        }
+
         return this.sendJson(res, 404, { error: `Owner route '${method} ${pathname}' not found.` }, requestId);
       }
 
@@ -2393,6 +2439,38 @@ export class HttpApp {
         return this.sendJson(res, 200, explainResult.getValue(), requestId);
       }
 
+      // WORKSHOP AUTOMOTORS AI CORE: PREVENTIVE MAINTENANCE CONSULTATION (/api/v1/vehicles/:id/ai/preventive-consultation)
+      const workshopAiConsultMatch = pathname.match(
+        /^\/api\/v1\/vehicles\/([^/]+)\/ai\/preventive-consultation$/
+      );
+      if (workshopAiConsultMatch && method === 'POST') {
+        const vehicleId = workshopAiConsultMatch[1]!;
+        const body = await this.parseBody(req);
+        const allowExternalAi = body.allowExternalAi === true;
+        const privacyConsent = body.privacyConsent === true;
+
+        const consultResult = await this.preventiveConsultationUseCase.execute({
+          context: {
+            actorUserId: reqContext.principal.id,
+            actorScope: 'WORKSHOP_MEMBER',
+            workshopId: tenantId,
+            permissions: currentMembership?.permissions ?? [],
+            targetVehicleId: vehicleId,
+            externalConsentGranted: allowExternalAi && privacyConsent,
+          },
+          category: typeof body.category === 'string' ? body.category : undefined,
+          question: typeof body.question === 'string' ? body.question : undefined,
+          allowExternalAi,
+          privacyConsent,
+        });
+
+        if (consultResult.isFailure) {
+          return this.sendJson(res, 400, { error: consultResult.getError() }, requestId);
+        }
+
+        return this.sendJson(res, 200, consultResult.getValue(), requestId);
+      }
+
       // AI: OBD2 INTERPRETATION
       if (pathname === '/api/v1/ai/obd2/interpret' && method === 'POST') {
         if (!hasWorkshopPermission('CALCULATE_PREVENTIVE')) {
@@ -2567,6 +2645,12 @@ export class HttpApp {
       }
       if (err instanceof ObdSecurityError) {
         return this.sendJson(res, 403, { error: err.message }, requestId);
+      }
+      if (err instanceof AiAccessDeniedError) {
+        return this.sendJson(res, 403, { error: err.message }, requestId);
+      }
+      if (err instanceof AiResourceNotFoundError) {
+        return this.sendJson(res, 404, { error: err.message }, requestId);
       }
       if (err instanceof ObdError) {
         return this.sendJson(res, 400, { error: err.message }, requestId);

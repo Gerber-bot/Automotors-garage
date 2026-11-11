@@ -185,6 +185,59 @@ export interface AIStatus {
   message: string;
 }
 
+export interface AiEvidenceSource {
+  sourceType: 'VEHICLE_PROFILE' | 'MAINTENANCE_HISTORY' | 'KNOWLEDGE_BASE_RULE' | 'DETERMINISTIC_ENGINE';
+  sourceId: string;
+  title: string;
+  verificationStatus:
+    | 'VERIFIED'
+    | 'CERTIFIED_WORKSHOP'
+    | 'OWNER_DECLARED'
+    | 'PENDING_VERIFICATION'
+    | 'DETERMINISTIC';
+  citation: string;
+  summary: string;
+}
+
+export interface PreventiveConsultationResponse {
+  vehicleId: string;
+  vehicleSummary: string;
+  category: string;
+  categoryLabel: string;
+  question: string;
+  deterministicCalculation: {
+    status: string;
+    nextDueMileage: number | null;
+    remainingKm: number | null;
+    nextDueDate: string | null;
+    estimatedDaysRemaining: number | null;
+    dueReason: string;
+    confidence: string;
+    intervalSource: string;
+    sourceCitation: string | null;
+    ruleVerificationStatus: string | null;
+    warning: string | null;
+  };
+  answer: string;
+  confirmedFacts: string[];
+  inferences: string[];
+  unknownOrMissingData: string[];
+  sources: AiEvidenceSource[];
+  toolsInvoked: string[];
+  privacy: {
+    mode: 'EXTERNAL_AI_ASSISTED' | 'DETERMINISTIC_FALLBACK';
+    externalProviderConfigured: boolean;
+    externalConsentGranted: boolean;
+    externalProviderUsed: boolean;
+    dataMinimizationApplied: true;
+    piiSentToExternalProvider: false;
+    providerName: string;
+    fallbackReason: string | null;
+  };
+  disclaimer: string;
+  generatedAt: string;
+}
+
 // ============================================================================
 // AUTOMOTORS VEHICLE KNOWLEDGE BASE CONTRACTS
 // ============================================================================

@@ -10,6 +10,7 @@ import type {
   AIStatus,
   HistorySummary,
   MaintenanceExplanation,
+  PreventiveConsultationResponse,
   KbManufacturer,
   KbModel,
   KbGeneration,
@@ -732,6 +733,46 @@ export class ApiClient {
       `/vehicles/${vehicleId}/predictions/${encodeURIComponent(category)}/explain`,
       {
         method: 'POST',
+        signal,
+      }
+    );
+  }
+
+  public async consultOwnerPreventiveMaintenance(
+    vehicleId: string,
+    payload: {
+      category?: string;
+      question?: string;
+      allowExternalAi?: boolean;
+      privacyConsent?: boolean;
+    },
+    signal?: AbortSignal
+  ): Promise<PreventiveConsultationResponse> {
+    return this.request<PreventiveConsultationResponse>(
+      `/owner/vehicles/${encodeURIComponent(vehicleId)}/ai/preventive-consultation`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+        signal,
+      }
+    );
+  }
+
+  public async consultWorkshopPreventiveMaintenance(
+    vehicleId: string,
+    payload: {
+      category?: string;
+      question?: string;
+      allowExternalAi?: boolean;
+      privacyConsent?: boolean;
+    },
+    signal?: AbortSignal
+  ): Promise<PreventiveConsultationResponse> {
+    return this.request<PreventiveConsultationResponse>(
+      `/vehicles/${encodeURIComponent(vehicleId)}/ai/preventive-consultation`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
         signal,
       }
     );
